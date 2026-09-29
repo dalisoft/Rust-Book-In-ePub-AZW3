@@ -28,7 +28,6 @@ jobs:
             - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
               with:
                   node-version: 25
-                  cache: pnpm
             - run: pnpm install --frozen-lockfile --ignore-scripts --store-dir .cache/pnpm-store
             - run: pnpm exec playwright install chromium
             - name: Stage Calibre runtime libraries without system installation

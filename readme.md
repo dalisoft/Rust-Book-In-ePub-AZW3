@@ -77,7 +77,7 @@ identified. Stale source links without a reliable target are rendered as plain
 text and listed in each book's `manifest.json` under `disabledLocalLinks`.
 External websites are not bundled into the book and require network access.
 Some Rust RFC source diagrams are unavailable even in the upstream PDF. Their
-locations remain in the EPUB as labeled source links; the release manifest
+locations remain in the EPUB as labeled source links; the build manifest
 records which images could not be embedded.
 
 ### Support us
