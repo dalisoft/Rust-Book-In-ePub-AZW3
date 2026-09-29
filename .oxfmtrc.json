@@ -1,0 +1,14 @@
+{
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "overrides": [
+    { "files": ["package.json", "tsconfig.json"], "options": { "tabWidth": 4 } }
+  ],
+  "ignorePatterns": [
+    ".github/**",
+    "docs/**",
+    "src/template.html",
+    "config.toml",
+    "readme.md"
+  ]
+}

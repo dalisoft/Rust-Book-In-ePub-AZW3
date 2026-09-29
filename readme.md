@@ -8,7 +8,7 @@ Feel free to send a pull request. We follow the Rust Code of Conduct.
 
 
 ### Development
-To run this project, install [Node](https://nodejs.org/) 25+ and pnpm.
+To run this project, use [Node](https://nodejs.org/) 26+ and pnpm 12.
 
 ```bash
 git clone https://github.com/dalisoft/Rust-Book-In-ePub-AZW3.git

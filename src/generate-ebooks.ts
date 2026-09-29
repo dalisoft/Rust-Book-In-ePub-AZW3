@@ -128,7 +128,9 @@ function calibreMetadata(
     execFileSync(
       "sqlite3",
       ["-json", db, `select title,path from books where id=${id}`],
-      { encoding: "utf8" },
+      {
+        encoding: "utf8",
+      },
     ),
   ) as Array<{ title: string; path: string }>;
   if (rows.length !== 1)
