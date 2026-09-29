@@ -34,7 +34,10 @@ jobs:
             - name: Stage Calibre runtime libraries without system installation
               run: |
                   mkdir -p .cache/calibre-debs .cache/calibre-libs
-                  (cd .cache/calibre-debs && apt download libegl1 libopengl0 libglvnd0)
+                  (cd .cache/calibre-debs && apt download \
+                    libegl1 libopengl0 libglvnd0 \
+                    libxcb-cursor0 libxcb-image0 libxcb-render-util0 \
+                    libxcb-xinerama0 libxkbcommon-x11-0)
                   for deb in .cache/calibre-debs/*.deb; do
                     dpkg-deb -x "$deb" .cache/calibre-libs
                   done
