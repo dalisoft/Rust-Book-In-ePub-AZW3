@@ -100,16 +100,19 @@ export async function capturePresentation(
     document.documentElement.classList.add("light");
   });
   const links = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('link[rel~="stylesheet"],style')).map(
-      (node) => ({
+    Array.from(document.querySelectorAll('link[rel~="stylesheet"],style'))
+      .filter(
+        (node) =>
+          node instanceof HTMLLinkElement || node instanceof HTMLStyleElement,
+      )
+      .map((node) => ({
         url: node instanceof HTMLLinkElement ? node.href : location.href,
         css:
           node instanceof HTMLStyleElement
             ? (node.textContent ?? "")
             : undefined,
         media: node.getAttribute("media") || "all",
-      }),
-    ),
+      })),
   );
   const load = async (
     url: string,

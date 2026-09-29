@@ -28,6 +28,7 @@ try {
   </style></head><body><style>h1 {font-size:3em}</style><div class="author-content"><main>
     <h1>Title</h1><p>Author paragraph.</p><h2>Chapter</h2>
     <pre><code>fn main() {\n    let value = 42;\n}</code></pre>
+    <svg xmlns="http://www.w3.org/2000/svg"><style>.diagram {stroke:black}</style><path class="diagram" d="M0,0 L10,10"/></svg>
   </main></div></body></html>`);
   const presentation = await capturePresentation(page, stage, async (url) => {
     throw new Error(`Unexpected remote request: ${url}`);

@@ -17,19 +17,24 @@ class Content(HTMLParser):
         self.body = False
         self.text = []
         self.counts = Counter()
+        self.non_content = 0
 
     def handle_starttag(self, tag, attrs):
+        if tag in {"style", "script"}:
+            self.non_content += 1
         if tag == "body":
             self.body = True
         if self.body and tag in {"h1", "h2", "h3", "h4", "pre", "table", "img"}:
             self.counts[tag] += 1
 
     def handle_endtag(self, tag):
+        if tag in {"style", "script"}:
+            self.non_content = max(0, self.non_content - 1)
         if tag == "body":
             self.body = False
 
     def handle_data(self, data):
-        if self.body:
+        if self.body and not self.non_content:
             self.text.append(data)
 
     def normalized(self):

@@ -285,9 +285,14 @@ async function main(): Promise<void> {
           const body = main.cloneNode(true) as HTMLElement;
           body
             .querySelectorAll(
-              "script,style,nav,button,.buttons,.nav-chapters,.mobile-nav-chapters",
+              "script,nav,button,.buttons,.nav-chapters,.mobile-nav-chapters",
             )
             .forEach((node) => node.remove());
+          body.querySelectorAll("style").forEach((node) => {
+            // Diagram-local SVG styles must travel with the diagram. HTML
+            // chapter styles are already captured in the book stylesheet.
+            if (!node.closest("svg")) node.remove();
+          });
           body.querySelectorAll("a.header").forEach((link) => {
             const heading =
               link.querySelector("h1,h2,h3,h4,h5,h6") ??
