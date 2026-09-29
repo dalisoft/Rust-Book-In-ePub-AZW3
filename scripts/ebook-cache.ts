@@ -16,6 +16,7 @@ export type Source = {
   sha256: string;
   recipe: string;
   images: Record<string, ImageSource>;
+  styles?: Record<string, ImageSource>;
   artifacts?: { epub: Artifact; azw3: Artifact };
 };
 export type Snapshot = { version: 2; sources: Record<string, Source> };
@@ -152,7 +153,8 @@ export function recipeHash(root: string, book: BookConfig): string {
   const inputs = [
     "src/generate-ebooks.ts",
     "src/shared/ebook-sections.ts",
-    "src/ebook-format.css",
+    "src/shared/ebook-presentation.ts",
+    "scripts/unpack-source-font.py",
     "src/shared/config.ts",
     "src/shared/url.ts",
     "src/shared/ebook-sources.ts",
@@ -160,9 +162,11 @@ export function recipeHash(root: string, book: BookConfig): string {
     "bun.lock",
     "scripts/ebook-toolchain.json",
     "scripts/ci-ebooks.sh",
+    "scripts/test-ebook-presentation.ts",
     "scripts/validate-ebooks.ts",
     "scripts/check-epub-links.py",
     "scripts/check-epub-style.py",
+    "scripts/review-epub-style.mjs",
     "scripts/check-epub-content.py",
     "scripts/check-easy-rust-style.py",
   ].map((file) => [file, sha256(fs.readFileSync(path.join(root, file)))]);
@@ -197,6 +201,7 @@ export async function scanBook(
     sha256: sha256(bytes),
     recipe,
     images: {},
+    styles: {},
   };
   fs.writeFileSync(path.join(folder, "page.html"), bytes);
   // An unchanged page has exactly the same image references. Recheck their
@@ -224,6 +229,34 @@ export async function scanBook(
       ),
     );
     source.images = Object.fromEntries(images);
+    const styles = await Promise.all(
+      Object.keys(baseline.styles ?? {}).map((styleUrl) =>
+        imageLimit(async () => {
+          const response = await fetchSource(styleUrl);
+          const contentType =
+            response.headers.get("content-type") ?? "application/octet-stream";
+          if (
+            !response.ok ||
+            !response.bytes.length ||
+            contentType.includes("text/html")
+          )
+            throw new Error(
+              `Cannot verify authored stylesheet/font: ${styleUrl}`,
+            );
+          const download = {
+            bytes: response.bytes,
+            source: {
+              resolvedUrl: response.url,
+              sha256: sha256(response.bytes),
+              contentType,
+            },
+          };
+          cacheImage(path.join(folder, "styles"), styleUrl, download);
+          return [styleUrl, download.source] as const;
+        }),
+      ),
+    );
+    source.styles = Object.fromEntries(styles);
   }
   fs.writeFileSync(
     path.join(folder, "page.json"),
@@ -232,6 +265,7 @@ export async function scanBook(
       finalUrl: source.finalUrl,
       sha256: source.sha256,
       verifiedImages: Object.keys(source.images),
+      verifiedStyles: Object.keys(source.styles ?? {}),
     }),
   );
   return source;
@@ -245,7 +279,9 @@ export function sameSource(a: Source | undefined, b: Source): boolean {
     a.sha256 === b.sha256 &&
     a.recipe === b.recipe &&
     JSON.stringify(Object.entries(a.images).sort()) ===
-      JSON.stringify(Object.entries(b.images).sort())
+      JSON.stringify(Object.entries(b.images).sort()) &&
+    JSON.stringify(Object.entries(a.styles ?? {}).sort()) ===
+      JSON.stringify(Object.entries(b.styles ?? {}).sort())
   );
 }
 
@@ -279,7 +315,10 @@ export function readSnapshot(file: string): Snapshot | undefined {
         !/^[a-f0-9]{64}$/.test(source.recipe)
       )
         throw new Error(`Invalid cached source: ${key}`);
-      for (const image of Object.values(source.images)) {
+      for (const image of [
+        ...Object.values(source.images),
+        ...Object.values(source.styles ?? {}),
+      ]) {
         if (
           !image ||
           typeof image.resolvedUrl !== "string" ||

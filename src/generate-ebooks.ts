@@ -7,10 +7,12 @@ import pLimit from "p-limit";
 import { getProjectRoot, loadConfig } from "./shared/config.ts";
 import { normalizeHttpUrl } from "./shared/url.ts";
 import { sectionBook } from "./shared/ebook-sections.ts";
+import { capturePresentation } from "./shared/ebook-presentation.ts";
 import {
   cachedImage,
   cacheImage,
   downloadImage,
+  fetchSource,
   sha256,
   type ImageSource,
 } from "./shared/ebook-sources.ts";
@@ -27,10 +29,6 @@ type Args = {
 
 const root = getProjectRoot(import.meta.url);
 const config = loadConfig(import.meta.url);
-const ebookCss = fs.readFileSync(
-  path.join(root, "src", "ebook-format.css"),
-  "utf8",
-);
 
 function options(): Args {
   const args: Args = {
@@ -179,6 +177,7 @@ async function main(): Promise<void> {
         let pageUrl = url;
         let sourceSha256: string | undefined;
         let verifiedImages: string[] = [];
+        let verifiedStyles: string[] = [];
         if (args.sourceDir) {
           const input = path.join(args.sourceDir, key);
           const captured = JSON.parse(
@@ -188,12 +187,14 @@ async function main(): Promise<void> {
             finalUrl: string;
             sha256: string;
             verifiedImages: string[];
+            verifiedStyles?: string[];
           };
           const bytes = fs.readFileSync(path.join(input, "page.html"));
           if (captured.url !== url || sha256(bytes) !== captured.sha256)
             throw new Error(`Corrupt or mismatched captured source: ${key}`);
           sourceSha256 = captured.sha256;
           verifiedImages = captured.verifiedImages;
+          verifiedStyles = captured.verifiedStyles ?? [];
           pageUrl = captured.finalUrl;
           await page.route("**/*", async (route) => {
             if (
@@ -215,8 +216,70 @@ async function main(): Promise<void> {
         if (!response?.ok())
           throw new Error(`HTTP ${response?.status() ?? "no response"}`);
         sourceSha256 ??= sha256(await response.body());
+        const sourceStyles: Record<string, ImageSource> = {};
+        const resourceFolder = path.join(
+          args.sourceDir ? path.join(args.sourceDir, key) : folder,
+          "styles",
+        );
+        const resourcePromises = new Map<
+          string,
+          Promise<{ source: ImageSource; bytes: Buffer }>
+        >();
+        const styleLimit = pLimit(6);
+        const resource = (resourceUrl: string) => {
+          if (!resourcePromises.has(resourceUrl))
+            resourcePromises.set(
+              resourceUrl,
+              styleLimit(async () => {
+                const cached = verifiedStyles.includes(resourceUrl)
+                  ? cachedImage(resourceFolder, resourceUrl)
+                  : undefined;
+                if (cached?.bytes) {
+                  sourceStyles[resourceUrl] = cached.source;
+                  return { source: cached.source, bytes: cached.bytes };
+                }
+                const response = await fetchSource(resourceUrl);
+                const contentType =
+                  response.headers.get("content-type") ??
+                  "application/octet-stream";
+                if (
+                  !response.ok ||
+                  !response.bytes.length ||
+                  contentType.includes("text/html")
+                )
+                  throw new Error(
+                    `Invalid authored style/font resource: ${resourceUrl} (${response.status}, ${contentType})`,
+                  );
+                const downloaded = {
+                  source: {
+                    resolvedUrl: response.url,
+                    sha256: sha256(response.bytes),
+                    contentType,
+                  },
+                  bytes: response.bytes,
+                };
+                sourceStyles[resourceUrl] = downloaded.source;
+                cacheImage(resourceFolder, resourceUrl, downloaded);
+                return downloaded;
+              }),
+            );
+          return resourcePromises.get(resourceUrl)!;
+        };
+        const presentation = await capturePresentation(page, stage, resource);
+        const ebookCss = presentation.css;
+        const wrap = (content: string) =>
+          presentation.wrappers
+            .map((item) => `<${item.tag} ${item.attributes}>`)
+            .join("") +
+          content +
+          [...presentation.wrappers]
+            .reverse()
+            .map((item) => `</${item.tag}>`)
+            .join("");
+        const documentHtml = (content: string, stylesheet: string) =>
+          `<!doctype html><html ${presentation.htmlAttributes}><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>${stylesheet}</head><body ${presentation.bodyAttributes}>${wrap(content)}</body></html>`;
         const extractionStarted = performance.now();
-        const extracted = await page.evaluate((bookKey) => {
+        const extracted = await page.evaluate(() => {
           const main = document.querySelector("main");
           if (!main) throw new Error("No <main> book content found");
           const body = main.cloneNode(true) as HTMLElement;
@@ -239,21 +302,14 @@ async function main(): Promise<void> {
             }
             link.replaceWith(...Array.from(link.childNodes));
           });
-          if (bookKey === "EasyRust") {
-            // The print page embeds a full contents list in the introduction.
-            // EPUB navigation already provides the same links without a long
-            // unstyled list interrupting the first chapter.
-            const heading = body.querySelector("#writing-rust-in-easy-english");
-            const contents = heading?.nextElementSibling?.nextElementSibling;
-            if (
-              contents?.tagName === "UL" &&
-              contents.querySelectorAll("li").length > 50
-            )
-              contents.remove();
-          }
           body.querySelectorAll("pre > pre").forEach((inner) => {
             const outer = inner.parentElement;
-            if (outer?.childElementCount === 1) outer.replaceWith(inner);
+            if (outer?.childElementCount === 1) {
+              for (const attr of outer.attributes)
+                if (!inner.hasAttribute(attr.name))
+                  inner.setAttribute(attr.name, attr.value);
+              outer.replaceWith(inner);
+            }
           });
           body.querySelectorAll("iframe[src]").forEach((frame) => {
             const target = new URL(frame.getAttribute("src")!, location.href);
@@ -409,7 +465,7 @@ async function main(): Promise<void> {
             images,
             disabledLocalLinks,
           };
-        }, key);
+        });
         console.log(
           `${key}: extracted in ${((performance.now() - extractionStarted) / 1000).toFixed(1)}s`,
         );
@@ -487,7 +543,7 @@ async function main(): Promise<void> {
         const htmlFile = path.join(stage, "book.html");
         fs.writeFileSync(
           htmlFile,
-          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${ebookCss}</style></head><body>${html}</body></html>`,
+          documentHtml(html, `<style>${ebookCss}</style>`),
         );
         let conversionInput = htmlFile;
         if (Buffer.byteLength(html) > 512 * 1024) {
@@ -496,13 +552,20 @@ async function main(): Promise<void> {
           for (const part of parts)
             fs.writeFileSync(
               path.join(stage, part.name),
-              `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="book.css"></head><body>${part.html}</body></html>`,
+              documentHtml(
+                part.html,
+                '<link rel="stylesheet" href="book.css">',
+              ),
             );
           const items = parts.map(
             (part, index) =>
               `<item id="part${index}" href="${part.name}" media-type="text/html"/>`,
           );
           items.push('<item id="css" href="book.css" media-type="text/css"/>');
+          for (const [index, asset] of presentation.assets.entries())
+            items.push(
+              `<item id="styleasset${index}" href="${asset.file}" media-type="${asset.mime}"/>`,
+            );
           for (const [index, file] of [
             ...downloadedImages.values(),
           ].entries()) {
@@ -549,6 +612,20 @@ async function main(): Promise<void> {
             "none",
             "--dont-split-on-page-breaks",
             "--no-default-epub-cover",
+            "--disable-font-rescaling",
+            "--disable-remove-fake-margins",
+            "--minimum-line-height",
+            "0",
+            "--margin-top",
+            "-1",
+            "--margin-bottom",
+            "-1",
+            "--margin-left",
+            "-1",
+            "--margin-right",
+            "-1",
+            "--page-breaks-before",
+            "/",
           ],
           path.join(folder, "epub-convert.log"),
         );
@@ -559,21 +636,27 @@ async function main(): Promise<void> {
             ...(metadata
               ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
               : []),
+            "--disable-font-rescaling",
+            "--disable-remove-fake-margins",
+            "--minimum-line-height",
+            "0",
+            "--margin-top",
+            "-1",
+            "--margin-bottom",
+            "-1",
+            "--margin-left",
+            "-1",
+            "--margin-right",
+            "-1",
+            "--chapter-mark",
+            "none",
+            "--page-breaks-before",
+            "/",
             // PalmDOC compression dominates CPU time on very large text books.
             // Uncompressed AZW3 is supported by the converter and Kindle; only
             // file size changes, not content, images, styling or navigation.
             ...(Buffer.byteLength(html) > 5 * 1024 * 1024
-              ? [
-                  "--dont-compress",
-                  "--chapter-mark",
-                  "none",
-                  "--page-breaks-before",
-                  "/",
-                  // Input flows already bound the reader's working set. Avoid
-                  // re-splitting thousands of forced web-print heading breaks.
-                  "--extra-css",
-                  "h1,h2,hr,div { page-break-before: auto !important; break-before: auto !important; }",
-                ]
+              ? ["--dont-compress"]
               : []),
           ],
           path.join(folder, "azw3-convert.log"),
@@ -583,6 +666,8 @@ async function main(): Promise<void> {
           url,
           sourceSha256,
           sourceImages,
+          sourceStyles,
+          presentation: { ...presentation, css: undefined },
           title: metadata?.title ?? title,
           sourceTitle: title,
           chapters: extracted.chapters,

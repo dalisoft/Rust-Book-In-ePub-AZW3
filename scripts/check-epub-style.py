@@ -32,6 +32,17 @@ def check(epub: Path) -> None:
         if not css_files:
             raise SystemExit(f"{epub}: no packaged CSS")
         css = "\n".join(archive.read(name).decode("utf-8") for name in css_files)
+        for css_name in css_files:
+            sheet = archive.read(css_name).decode("utf-8")
+            for ref in re.findall(r"url\(\s*['\"]?([^'\"\s)]+)", sheet):
+                parsed = urlsplit(ref)
+                if parsed.scheme == "data" or ref.startswith("#"):
+                    continue
+                if parsed.scheme or parsed.netloc:
+                    raise SystemExit(f"{epub}: external CSS resource {ref}")
+                target = posixpath.normpath(posixpath.join(posixpath.dirname(css_name), parsed.path))
+                if target not in names:
+                    raise SystemExit(f"{epub}: missing CSS resource {target}")
         pages = {
             name: archive.read(name).decode("utf-8")
             for name in names
@@ -55,15 +66,8 @@ def check(epub: Path) -> None:
                 if css_name not in names:
                     raise SystemExit(f"{epub}: {name} links missing {css_name}")
                 linked_css.append(archive.read(css_name).decode("utf-8"))
-            if "font-family: Georgia" not in "\n".join(linked_css):
-                raise SystemExit(f"{epub}: {name} does not link book typography")
-
-    if "font-family: Georgia" not in css or "line-height: 1.5" not in css:
+    if "font-family:" not in css:
         raise SystemExit(f"{epub}: book typography is missing")
-    if any("<h1" in page or "<h2" in page for page in pages.values()) and "border-bottom:" not in css:
-        raise SystemExit(f"{epub}: heading styling is missing")
-    if any("<pre" in page for page in pages.values()) and "background: #f1f4f6" not in css:
-        raise SystemExit(f"{epub}: code-block styling is missing")
     if "@import" in css or "fonts.googleapis.com" in css:
         raise SystemExit(f"{epub}: styling requires network access")
     if any(re.search(r"<pre\b[^>]*>\s*<pre\b", page) for page in pages.values()):

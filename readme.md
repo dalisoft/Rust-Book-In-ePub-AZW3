@@ -84,9 +84,17 @@ language are used; check authors and publication details before distributing
 or importing those files. Generation does not modify the library. The Kindle
 format is AZW3, not the older MOBI format.
 
-EPUB styling is self-contained in `src/ebook-format.css`, so it works without
-web fonts or network access. Easy Rust's redundant in-chapter contents list is
-omitted because the EPUB navigation already contains the chapter links.
+EPUB styling comes from each author's print/light stylesheets, not a replacement
+theme. The builder bundles source fonts and CSS images for offline use, resolves
+CSS variables for reader compatibility, and retains intentional page breaks,
+heading hierarchy, code indentation, syntax colors, and introductory contents.
+WOFF fonts are losslessly unpacked into Kindle-compatible SFNT containers using
+the temporary converter's font tooling; no system fonts are installed.
+Source styles/font/highlighter hashes participate in daily change detection.
+Converter font rescaling, minimum line-height, and artificial page margins are
+disabled. Reflowable EPUB/AZW3 pagination depends on the reader and screen;
+it does not reproduce fixed PDF page numbers. Source presentation takes priority
+over build-time targets.
 The builder reads static print HTML with page scripts disabled, preventing
 interactive code editors from injecting browser-only controls into the book.
 Embedded web widgets become ordinary links, which remain usable in EPUB and
@@ -104,6 +112,8 @@ survives conversion, and that nested code blocks do not remain.
 It also rejects injected Ace editor markup and iframes. For a visual review
 of packaged EPUB pages, run
 `bun run review:ebooks output/ebooks output/review-style /path/to/chromium`.
+This compares packaged rendering against captured source fonts, sizes, spacing,
+colors, indentation and break decisions, and saves code-page screenshots.
 In-book links are repaired when their target ID or unique heading can be
 identified. Stale source links without a reliable target are rendered as plain
 text and listed in each book's `manifest.json` under `disabledLocalLinks`.

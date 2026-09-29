@@ -177,7 +177,8 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
   const files = [
     "src/generate-ebooks.ts",
     "src/shared/ebook-sections.ts",
-    "src/ebook-format.css",
+    "src/shared/ebook-presentation.ts",
+    "scripts/unpack-source-font.py",
     "src/shared/config.ts",
     "src/shared/url.ts",
     "src/shared/ebook-sources.ts",
@@ -185,9 +186,11 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
     "bun.lock",
     "scripts/ebook-toolchain.json",
     "scripts/ci-ebooks.sh",
+    "scripts/test-ebook-presentation.ts",
     "scripts/validate-ebooks.ts",
     "scripts/check-epub-links.py",
     "scripts/check-epub-style.py",
+    "scripts/review-epub-style.mjs",
     "scripts/check-epub-content.py",
     "scripts/check-easy-rust-style.py",
   ];
@@ -207,7 +210,7 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
   assert.equal(recipeHash(dir, book), before);
   for (const file of [
     "src/shared/ebook-sections.ts",
-    "src/ebook-format.css",
+    "src/shared/ebook-presentation.ts",
     "bun.lock",
     "scripts/ebook-toolchain.json",
   ]) {
@@ -263,9 +266,13 @@ test("source scanner catches image-only edits and missing-image recovery", async
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   let image = Buffer.from("image-v1");
   let missing = false;
+  let stylesheet = Buffer.from("p{color:red}");
   let page = `<html><main><h1>Book</h1>${"content ".repeat(250)}<img src="/image.png"></main></html>`;
   const server = createServer((request, response) => {
-    if (request.url === "/image.png") {
+    if (request.url === "/style.css") {
+      response.writeHead(200, { "content-type": "text/css" });
+      response.end(stylesheet);
+    } else if (request.url === "/image.png") {
       response.writeHead(missing ? 404 : 200, { "content-type": "image/png" });
       response.end(missing ? "missing" : image);
     } else {
@@ -304,6 +311,40 @@ test("source scanner catches image-only edits and missing-image recovery", async
     pLimit(2),
   );
   assert.ok(sameSource(baseline, unchanged));
+  const styleUrl = new URL("/style.css", url).href;
+  baseline.styles = {
+    [styleUrl]: {
+      resolvedUrl: styleUrl,
+      sha256: sha256(stylesheet),
+      contentType: "text/css",
+    },
+  };
+  const sameStyles = await scanBook(
+    "Test",
+    book,
+    url,
+    baseline.recipe,
+    baseline,
+    dir,
+    pLimit(2),
+  );
+  assert.ok(sameSource(baseline, sameStyles));
+  stylesheet = Buffer.from("p{color:blue}");
+  const changedStyles = await scanBook(
+    "Test",
+    book,
+    url,
+    baseline.recipe,
+    baseline,
+    dir,
+    pLimit(2),
+  );
+  assert.equal(changedStyles.sha256, baseline.sha256);
+  assert.ok(
+    !sameSource(baseline, changedStyles),
+    "stylesheet-only edits must rebuild the book",
+  );
+  stylesheet = Buffer.from("p{color:red}");
   image = Buffer.from("image-v2");
   const edited = await scanBook(
     "Test",

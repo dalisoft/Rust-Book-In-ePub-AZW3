@@ -9,14 +9,14 @@ from zipfile import ZipFile
 
 def check(epub: Path) -> None:
     with ZipFile(epub) as archive:
-        css = archive.read("stylesheet.css").decode("utf-8")
+        css = "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist() if name.endswith(".css"))
         pages = {
             name: archive.read(name).decode("utf-8")
             for name in archive.namelist()
             if name.endswith((".html", ".xhtml"))
         }
 
-    required = ("font-family: Georgia", "border-bottom:", "background: #f1f4f6")
+    required = ("Open Sans", "Source Code Pro", "@font-face")
     if any(rule not in css for rule in required):
         raise SystemExit(f"{epub}: expected EPUB styles are missing")
     if "@import" in css or "fonts.googleapis.com" in css:
@@ -30,12 +30,10 @@ def check(epub: Path) -> None:
     )
     if introduction is None:
         raise SystemExit(f"{epub}: Easy Rust introduction is missing")
-    start = introduction.index('id="writing-rust-in-easy-english"')
-    next_chapter = introduction.find('id="part-1---rust-in-your-browser"', start)
-    if next_chapter < 0:
+    if not any('id="part-1---rust-in-your-browser"' in page for page in pages.values()):
         raise SystemExit(f"{epub}: first chapter is missing")
-    if "<ul" in introduction[start:next_chapter]:
-        raise SystemExit(f"{epub}: duplicate long contents list remains")
+    if "<ul" not in introduction:
+        raise SystemExit(f"{epub}: author's introductory contents list is missing")
     print(f"{epub}: offline styles, code blocks, and introduction verified")
 
 

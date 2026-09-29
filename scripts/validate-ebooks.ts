@@ -77,6 +77,20 @@ await Promise.all(
     }),
   ),
 );
+if (keys.length) {
+  const review = await run(
+    process.execPath,
+    [
+      path.join(root, "scripts/review-epub-style.mjs"),
+      outputDir,
+      path.join(outputDir, "review-style"),
+      process.env.CHROMIUM_PATH ?? "",
+      ...keys,
+    ],
+    { timeout: 300_000, maxBuffer: 8 * 1024 * 1024 },
+  );
+  console.log(review.stdout.trim());
+}
 console.log(
   `Validated ${keys.length} rebuilt books; ${plan?.reusedKeys.length ?? 0} cached books retain matching validation recipe and SHA-256`,
 );

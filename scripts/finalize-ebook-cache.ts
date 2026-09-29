@@ -34,10 +34,14 @@ for (const key of keys) {
     ) as {
       sourceSha256: string;
       sourceImages: Record<string, ImageSource>;
+      sourceStyles: Record<string, ImageSource>;
     };
     if (generated.sourceSha256 !== source.sha256 || !generated.sourceImages)
       throw new Error(`Generated source differs from fingerprint: ${key}`);
     source.images = generated.sourceImages;
+    if (!generated.sourceStyles || !Object.keys(generated.sourceStyles).length)
+      throw new Error(`Missing authored presentation fingerprints: ${key}`);
+    source.styles = generated.sourceStyles;
     source.artifacts = {
       epub: artifactHash(path.join(folder, `${key}.epub`)),
       azw3: artifactHash(path.join(folder, `${key}.azw3`)),
