@@ -34,7 +34,7 @@ class Content(HTMLParser):
 
     def normalized(self):
         # Converter cleanup removes discretionary wrapping markers, not text.
-        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", "".join(self.text))).replace("\u00ad", "").replace("\u200b", "")
+        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", "".join(self.text))).replace("\u00ad", "").replace("\u200b", "").replace("\u2010", "-")
 
 
 epub = Path(sys.argv[1])
