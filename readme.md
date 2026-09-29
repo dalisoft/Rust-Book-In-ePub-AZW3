@@ -8,24 +8,24 @@ Feel free to send a pull request. We follow the Rust Code of Conduct.
 
 
 ### Development
-To run this project, use [Node](https://nodejs.org/) 26+ and pnpm 12.
+To run this project, use [Node](https://nodejs.org/) 26+ and Bun 1.4.2.
 
 ```bash
 git clone https://github.com/dalisoft/Rust-Book-In-ePub-AZW3.git
 cd Rust-Book-In-ePub-AZW3
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
-pnpm install --frozen-lockfile --ignore-scripts --store-dir .cache/pnpm-store
-pnpm exec playwright install chromium
-pnpm start
+bun ci --ignore-scripts
+./node_modules/.bin/playwright install chromium
+bun run start
 ```
 
 This downloads all books listed in `config.toml`.
 
-Use `DEBUG_ONLY_FIRST=true pnpm start` to process only the first book during debugging.
+Use `DEBUG_ONLY_FIRST=true bun run start` to process only the first book during debugging.
 
-Use `PRINT_SETTLE_MS=12000 pnpm start` to enforce a longer fixed settle delay before printing.
+Use `PRINT_SETTLE_MS=12000 bun run start` to enforce a longer fixed settle delay before printing.
 
-Use `pnpm generate-site` to regenerate `docs/index.html`.
+Use `bun run generate-site` to regenerate `docs/index.html`.
 
 ### EPUB and AZW3 (experimental)
 
@@ -34,7 +34,7 @@ builder. It creates separate files in `output/ebooks/` and never edits the PDF
 releases or a Calibre library. It needs the project's Node dependencies, a
 Chromium browser, and Calibre's `ebook-convert`/`ebook-meta` commands.
 
-For a single book, run `pnpm ebooks --book=RustPerformanceBook`; repeat
+For a single book, run `bun run ebooks --book=RustPerformanceBook`; repeat
 `--book=KEY` for several books, or use `--all`. On a machine with an existing
 Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
 `Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
@@ -74,7 +74,7 @@ It also checks that the offline typography, heading, and code-block styling
 survives conversion, and that nested code blocks do not remain.
 It also rejects injected Ace editor markup and iframes. For a visual review
 of packaged EPUB pages, run
-`pnpm review:ebooks output/ebooks output/review-style /path/to/chromium`.
+`bun run review:ebooks output/ebooks output/review-style /path/to/chromium`.
 In-book links are repaired when their target ID or unique heading can be
 identified. Stale source links without a reliable target are rendered as plain
 text and listed in each book's `manifest.json` under `disabledLocalLinks`.

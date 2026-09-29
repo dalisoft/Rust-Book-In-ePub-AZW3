@@ -31,10 +31,10 @@
         "typescript": "^7.0.2"
     },
     "simple-git-hooks": {
-        "pre-commit": "pnpm lint && pnpm format && pnpm knip && node src/generate-site.ts && git add docs/index.html"
+        "pre-commit": "bun run lint && bun run format && bun run knip && node src/generate-site.ts && git add docs/index.html"
     },
     "engines": {
         "node": ">=26"
     },
-    "packageManager": "pnpm@12.8.1"
+    "packageManager": "bun@1.4.2"
 }

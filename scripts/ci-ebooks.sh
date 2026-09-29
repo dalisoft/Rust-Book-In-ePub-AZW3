@@ -26,9 +26,9 @@ if [ "${CI:-}" = true ]; then
 fi
 
 command -v ebook-convert >/dev/null
-pnpm lint
-pnpm typecheck
-pnpm format:check
+bun run lint
+bun run typecheck
+bun run format:check
 set -- "$book_option" "--output-dir=$output_dir"
 if [ -n "${CHROMIUM_PATH:-}" ]; then
     set -- "$@" "--chromium=$CHROMIUM_PATH"
@@ -36,7 +36,7 @@ fi
 if [ -n "${CALIBRE_LIBRARY:-}" ] && [ -n "${METADATA_MAP:-}" ]; then
     set -- "$@" "--calibre-library=$CALIBRE_LIBRARY" "--metadata-map=$METADATA_MAP"
 fi
-pnpm ebooks "$@"
+bun run ebooks "$@"
 
 found=0
 for epub in "$output_dir"/*/*.epub; do

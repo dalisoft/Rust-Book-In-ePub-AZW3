@@ -19,21 +19,29 @@ jobs:
         runs-on: ubuntu-24.04
         env:
             PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright
+            BUN_INSTALL_CACHE_DIR: ${{ github.workspace }}/.cache/bun-cache
 
         steps:
             - name: Get current date
               id: date
               run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-              with:
-                  version: 12.8.1
-                  dest: ${{ github.workspace }}/.cache/pnpm
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
                   node-version: 26
                   package-manager-cache: false
-            - run: pnpm install --frozen-lockfile --ignore-scripts --store-dir .cache/pnpm-store
+            - name: Stage verified Bun binary inside the project
+              run: |
+                  mkdir -p .cache/bun
+                  curl --fail --location --show-error --silent \
+                    --output .cache/bun/bun-linux-x64.zip \
+                    https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64.zip
+                  echo '36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913  .cache/bun/bun-linux-x64.zip' | sha256sum --check
+                  unzip -q .cache/bun/bun-linux-x64.zip -d .cache/bun
+                  rm -- .cache/bun/bun-linux-x64.zip
+                  .cache/bun/bun-linux-x64/bun --version
+                  echo "$PWD/.cache/bun/bun-linux-x64" >> "$GITHUB_PATH"
+            - run: bun ci --ignore-scripts
             - name: Compare official print pages with the latest release
               id: sources
               env:
@@ -53,7 +61,7 @@ jobs:
                     --output=.cache/source-check/current-source-fingerprints.json \
                     "${baseline[@]}" >> "$GITHUB_OUTPUT"
             - if: steps.sources.outputs.changed == 'true'
-              run: pnpm exec playwright install chromium
+              run: ./node_modules/.bin/playwright install chromium
             - name: Stage Calibre runtime libraries without system installation
               if: steps.sources.outputs.changed == 'true'
               run: |

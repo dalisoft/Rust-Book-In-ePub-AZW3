@@ -1,0 +1,5 @@
+[install]
+ignoreScripts = true
+
+[install.cache]
+dir = ".cache/bun-cache"
