@@ -17,7 +17,11 @@ import {
   type Snapshot,
   type Source,
 } from "./ebook-cache.ts";
-import { cachedImage, sha256 } from "../src/shared/ebook-sources.ts";
+import {
+  cachedImage,
+  fetchSource,
+  sha256,
+} from "../src/shared/ebook-sources.ts";
 
 const bytes = Buffer.alloc(2048, 7);
 const artifact = { sha256: sha256(bytes), size: bytes.length };
@@ -223,6 +227,32 @@ test("published assets must match the complete manifest by hash and size", () =>
     () => verifyRelease(snapshot(), remote, artifact),
     /hash\/size mismatch/,
   );
+});
+
+test("downloads retry a truncated body after successfully receiving headers", async (t) => {
+  let requests = 0;
+  const expected = Buffer.from("complete-image-body");
+  const server = createServer((_request, response) => {
+    requests++;
+    response.writeHead(200, {
+      "content-type": "image/png",
+      "content-length": expected.length,
+    });
+    response.flushHeaders();
+    if (requests < 3) {
+      response.write(expected.subarray(0, 3));
+      setTimeout(() => response.destroy(), 20);
+    } else response.end(expected);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const response = await fetchSource(
+    `http://127.0.0.1:${address.port}/image.png`,
+  );
+  assert.equal(requests, 3);
+  assert.deepEqual(response.bytes, expected);
 });
 
 test("source scanner catches image-only edits and missing-image recovery", async (t) => {

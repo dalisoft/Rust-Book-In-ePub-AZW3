@@ -19,17 +19,36 @@ export async function fetchSource(
   url: string,
   attempts = 3,
   timeout = 45_000,
-): Promise<Response> {
+): Promise<{
+  url: string;
+  status: number;
+  ok: boolean;
+  headers: Headers;
+  bytes: Buffer;
+}> {
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(timeout),
         headers: { "User-Agent": "Rust-Book-In-ePub-AZW3" },
       });
-      if (![408, 429, 500, 502, 503, 504].includes(response.status))
-        return response;
-      if (attempt === attempts - 1) return response;
-      await response.body?.cancel();
+      if (
+        [408, 429, 500, 502, 503, 504].includes(response.status) &&
+        attempt < attempts - 1
+      ) {
+        await response.body?.cancel();
+      } else {
+        // Consume the body inside the retry boundary: receiving headers does
+        // not mean the image or print page was downloaded completely.
+        const bytes = Buffer.from(await response.arrayBuffer());
+        return {
+          url: response.url,
+          status: response.status,
+          ok: response.ok,
+          headers: response.headers,
+          bytes,
+        };
+      }
     } catch (error) {
       if (attempt === attempts - 1) throw error;
     }
@@ -48,7 +67,7 @@ export async function downloadImage(
     // RFCs contain obsolete external HTTP diagrams. Try HTTPS first so a
     // blocked HTTP request cannot delay every otherwise unchanged daily run.
     const request = (imageUrl: string) => fetchSource(imageUrl);
-    let response: Response;
+    let response: Awaited<ReturnType<typeof fetchSource>>;
     if (key === "RustRFCs" && resolvedUrl.startsWith("http:")) {
       resolvedUrl = resolvedUrl.replace(/^http:/, "https:");
       try {
@@ -57,7 +76,6 @@ export async function downloadImage(
           !response.ok ||
           !response.headers.get("content-type")?.startsWith("image/")
         ) {
-          await response.body?.cancel();
           throw new Error("HTTPS diagram unavailable");
         }
       } catch {
@@ -69,7 +87,6 @@ export async function downloadImage(
       response.status === 404 &&
       new URL(resolvedUrl).hostname === "rawgit.com"
     ) {
-      await response.body?.cancel();
       resolvedUrl = `https://raw.githubusercontent.com${new URL(resolvedUrl).pathname}`;
       response = await request(resolvedUrl);
     }
@@ -79,7 +96,6 @@ export async function downloadImage(
       book.ebook_image_fallback_base &&
       resolvedUrl.startsWith(book.ebook_image_fallback_prefix)
     ) {
-      await response.body?.cancel();
       resolvedUrl = new URL(
         resolvedUrl.slice(book.ebook_image_fallback_prefix.length),
         book.ebook_image_fallback_base,
@@ -88,12 +104,11 @@ export async function downloadImage(
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || !contentType.toLowerCase().startsWith("image/")) {
-      await response.body?.cancel();
       throw new Error(
         `Image HTTP ${response.status} (${contentType}): ${resolvedUrl}`,
       );
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = response.bytes;
     if (!bytes.length || bytes.length > 25 * 1024 * 1024)
       throw new Error(`Invalid image size: ${resolvedUrl}`);
     return {

@@ -184,7 +184,7 @@ export async function scanBook(
 ): Promise<Source> {
   const response = await fetchSource(url);
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = response.bytes;
   if (bytes.length < 1000 || !/<main(?:\s|>)/i.test(bytes.toString("utf8")))
     throw new Error(`${url}: response does not contain a print-book <main>`);
   const folder = path.join(sourceDir, key);
