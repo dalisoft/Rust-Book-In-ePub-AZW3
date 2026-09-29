@@ -34,6 +34,10 @@ try {
     throw new Error(`Unexpected remote request: ${url}`);
   });
   assert.ok(!presentation.css.includes("var("));
+  assert.equal(
+    await page.locator("path").getAttribute("stroke"),
+    "rgb(0, 0, 0)",
+  );
   assert.ok(presentation.css.replaceAll(" ", "").includes("rgb(23,45,67)"));
   assert.ok(presentation.css.replaceAll(" ", "").includes("rgb(240,241,242)"));
   assert.ok(!presentation.css.includes("color:red"));

@@ -370,6 +370,42 @@ export async function capturePresentation(
       });
     });
   }
+  // Ebook converters do not consistently understand SVG-only CSS properties.
+  // Store the author's rendered paint as SVG presentation attributes so paths,
+  // boxes, arrowheads and labels survive CSS flattening and rasterization.
+  await page.evaluate(() => {
+    document
+      .querySelectorAll(
+        "main svg path,main svg line,main svg rect,main svg circle,main svg ellipse,main svg polygon,main svg polyline,main svg text",
+      )
+      .forEach((element) => {
+        const computed = getComputedStyle(element);
+        const properties = [
+          "fill",
+          "fill-opacity",
+          "stroke",
+          "stroke-width",
+          "stroke-opacity",
+          "stroke-linecap",
+          "stroke-linejoin",
+          "stroke-dasharray",
+          "stroke-dashoffset",
+        ];
+        if (element.tagName.toLowerCase() === "text")
+          properties.push(
+            "font-family",
+            "font-size",
+            "font-weight",
+            "font-style",
+            "text-anchor",
+            "dominant-baseline",
+          );
+        for (const property of properties) {
+          const value = computed.getPropertyValue(property);
+          if (value) element.setAttribute(property, value);
+        }
+      });
+  });
   // Materialize source break decisions before sectioning changes :first-child
   // /:first-of-type contexts. No new breaks or speed-related overrides.
   await page.evaluate(() => {
@@ -436,6 +472,9 @@ export async function capturePresentation(
       "main pre",
       "main pre code",
       "main table",
+      "main svg rect",
+      "main svg line",
+      "main svg text",
     ].flatMap((selector) => {
       const element = document.querySelector(selector);
       if (!element) return [];
@@ -449,7 +488,17 @@ export async function capturePresentation(
         {
           selector: `#${CSS.escape(element.id)}`,
           styles: Object.fromEntries(
-            properties.map((name) => [name, computed.getPropertyValue(name)]),
+            (element instanceof SVGElement
+              ? [
+                  "stroke",
+                  "stroke-width",
+                  "stroke-opacity",
+                  "fill",
+                  "fill-opacity",
+                  "stroke-dasharray",
+                ]
+              : properties
+            ).map((name) => [name, computed.getPropertyValue(name)]),
           ),
         },
       ];

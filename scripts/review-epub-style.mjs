@@ -57,7 +57,7 @@ try {
       throw new Error(`${key}: no author-source presentation reference`);
     const files = fs
       .readdirSync(folder, { recursive: true })
-      .filter((name) => /\.(?:x?html)$/.test(name));
+      .filter((name) => /\.(?:x?html|svg)$/.test(name));
     const page = await browser.newPage({
       viewport: { width: 1100, height: 800 },
     });
