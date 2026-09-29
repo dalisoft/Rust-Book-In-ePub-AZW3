@@ -20,10 +20,14 @@ file_name="cookbook.pdf"
 [Books.RustWasm]
 print_url="https://rustwasm.github.io/docs/book/print.html"
 file_name="rust_wasm.pdf"
+ebook_image_fallback_prefix="https://rustwasm.github.io/docs/images/"
+ebook_image_fallback_base="https://raw.githubusercontent.com/rustwasm/book/master/src/images/"
 
 [Books.EasyRust]
 print_url="https://dhghomon.github.io/easy_rust/print.html"
 file_name="easy_rust.pdf"
+ebook_image_fallback_prefix="https://dhghomon.github.io/easy_rust/"
+ebook_image_fallback_base="https://raw.githubusercontent.com/Dhghomon/easy_rust/master/"
 
 [Books.EmbeddedRust]
 print_url="https://docs.rust-embedded.org/book/print.html"
@@ -62,14 +66,17 @@ file_name="rust_linked_list.pdf"
 [Books.RustPractiseQuestions]
 print_url="https://rust-unofficial.github.io/rust-practise-questions/print.html"
 file_name="rust_practise_questions.pdf"
+display_title="Rust Practise Questions"
 
 [Books.The_Rust_Discovery-microbit]
 print_url="https://docs.rust-embedded.org/discovery/microbit/print.html"
 file_name="microbit_beginner_rust.pdf"
+display_title="Discovery (micro:bit)"
 
 [Books.The_Rust_DiscoverySTM]
 print_url="https://docs.rust-embedded.org/discovery/f3discovery/print.html"
 file_name="stm32f3discovery_beginner_rust.pdf"
+display_title="Discovery (STM32F3)"
 
 [Books.CargoBook]
 print_url="https://doc.rust-lang.org/cargo/print.html"
@@ -119,6 +126,7 @@ file_name="unsafe_code_guidelines.pdf"
 [Books.ComprehensiveRust]
 print_url="https://google.github.io/comprehensive-rust/print.html"
 file_name="comprehensive_rust.pdf"
+display_title="Comprehensive Rust"
 
 [Books.EffectiveRust]
 print_url="https://www.lurklurk.org/effective-rust/print.html"
@@ -135,6 +143,8 @@ file_name="embedonomicon.pdf"
 [Books.WasmBindgenGuide]
 print_url="https://rustwasm.github.io/docs/wasm-bindgen/print.html"
 file_name="wasm_bindgen_guide.pdf"
+ebook_image_fallback_prefix="https://rustwasm.github.io/docs/wasm-bindgen/"
+ebook_image_fallback_base="https://raw.githubusercontent.com/wasm-bindgen/wasm-bindgen/main/guide/src/examples/"
 
 [Books.LifetimeKata]
 print_url="https://tfpk.github.io/lifetimekata/print.html"

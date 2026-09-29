@@ -8,6 +8,8 @@
     },
     "scripts": {
         "start": "node src/main.ts",
+        "ebooks": "node src/generate-ebooks.ts",
+        "review:ebooks": "node scripts/review-epub-style.mjs",
         "generate-site": "node src/generate-site.ts",
         "lint": "oxlint",
         "format": "oxfmt .",

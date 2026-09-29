@@ -1,0 +1,97 @@
+/* Self-contained EPUB styles: no web fonts or network requests. */
+body {
+  font-family: Georgia, serif;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: Georgia, serif;
+  line-height: 1.25;
+  page-break-after: avoid;
+}
+
+h1 {
+  font-size: 1.8em;
+  margin: 1.4em 0 0.7em;
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid #55758a;
+}
+
+h2 {
+  font-size: 1.4em;
+  margin: 1.25em 0 0.55em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid #b3c4cd;
+}
+
+h3,
+h4 {
+  margin: 1.1em 0 0.4em;
+}
+
+p {
+  margin: 0 0 0.9em;
+}
+
+ul,
+ol {
+  margin: 0.6em 0 1em;
+  padding-left: 1.5em;
+}
+
+li {
+  margin: 0.25em 0;
+}
+
+a {
+  color: #245d82;
+  text-decoration: underline;
+}
+
+pre,
+code {
+  font-family: Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+code {
+  font-size: 0.9em;
+}
+
+pre {
+  white-space: pre-wrap;
+  line-height: 1.35;
+  margin: 1em 0;
+  padding: 0.65em 0.8em;
+  border-left: 3px solid #55758a;
+  background: #f1f4f6;
+}
+
+pre code {
+  font-size: 1em;
+}
+
+blockquote {
+  margin: 1em 0;
+  padding: 0.2em 0.8em;
+  border-left: 3px solid #b3c4cd;
+}
+
+table {
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+th,
+td {
+  border: 1px solid #b3c4cd;
+  padding: 0.35em 0.5em;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}

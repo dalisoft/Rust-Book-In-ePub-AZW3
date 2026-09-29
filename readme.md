@@ -1,6 +1,6 @@
-## Rust Books PDF
+## Rust Books in EPUB and AZW3
 
-Please find the latest version of the pdf in the [release tab](https://github.com/shirshak55/Rust-Book-In-PDF/releases/). Look at the Assets section and download the pdf from there.
+Download the EPUB or AZW3 files from this fork's [releases](https://github.com/dalisoft/Rust-Book-In-ePub-AZW3/releases). This project is based on [Rust-Book-In-PDF](https://github.com/shirshak55/Rust-Book-In-PDF).
 
 ### Contributing
 
@@ -11,8 +11,10 @@ Feel free to send a pull request. We follow the Rust Code of Conduct.
 To run this project, install [Node](https://nodejs.org/) 25+ and pnpm.
 
 ```bash
-git clone https://github.com/shirshak55/Rust-Book-In-PDF.git
-pnpm install
+git clone https://github.com/dalisoft/Rust-Book-In-ePub-AZW3.git
+cd Rust-Book-In-ePub-AZW3
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
+pnpm install --frozen-lockfile --ignore-scripts --store-dir .cache/pnpm-store
 pnpm exec playwright install chromium
 pnpm start
 ```
@@ -24,6 +26,59 @@ Use `DEBUG_ONLY_FIRST=true pnpm start` to process only the first book during deb
 Use `PRINT_SETTLE_MS=12000 pnpm start` to enforce a longer fixed settle delay before printing.
 
 Use `pnpm generate-site` to regenerate `docs/index.html`.
+
+### EPUB and AZW3 (experimental)
+
+The EPUB/AZW3 builder uses the same official HTML `print_url` values as the PDF
+builder. It creates separate files in `output/ebooks/` and never edits the PDF
+releases or a Calibre library. It needs the project's Node dependencies, a
+Chromium browser, and Calibre's `ebook-convert`/`ebook-meta` commands.
+
+For a single book, run `pnpm ebooks --book=RustPerformanceBook`; repeat
+`--book=KEY` for several books, or use `--all`. On a machine with an existing
+Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
+`Publish EPUB and AZW3 Monthly` runs on pushes to `main`, monthly, or manually.
+It builds every configured book, validates both formats, then publishes them
+as release assets only if the complete build succeeds. Its browser, package
+store, and Calibre installation stay inside the checked-out project.
+
+To copy *existing* Calibre metadata and cover into generated formats, provide
+both `--calibre-library=/path/to/library` and
+`--metadata-map=/path/to/local-calibre-map.json`. The map is a JSON object
+from book keys to confirmed Calibre record IDs, for example
+`{"RustPerformanceBook":134}`. It is ignored by Git because IDs are personal
+and must be verified before use. Without it, only the source title and English
+language are used; check authors and publication details before distributing
+or importing those files. Generation does not modify the library. The Kindle
+format is AZW3, not the older MOBI format.
+
+EPUB styling is self-contained in `src/ebook-format.css`, so it works without
+web fonts or network access. Easy Rust's redundant in-chapter contents list is
+omitted because the EPUB navigation already contains the chapter links.
+The builder reads static print HTML with page scripts disabled, preventing
+interactive code editors from injecting browser-only controls into the book.
+Embedded web widgets become ordinary links, which remain usable in EPUB and
+AZW3 readers.
+
+For locally mapped books, run
+`sh scripts/verify-calibre-ebooks.sh /path/to/library /path/to/local-calibre-map.json`
+to check that both formats open, EPUB ZIP integrity passes, titles match the
+Calibre records, and embedded covers are byte-for-byte identical. Inspect the
+conversion logs and individual source licenses before publishing artifacts.
+The CI entry script also checks every packaged EPUB hyperlink and navigation
+target, including links back to chapters that should work offline.
+It also checks that the offline typography, heading, and code-block styling
+survives conversion, and that nested code blocks do not remain.
+It also rejects injected Ace editor markup and iframes. For a visual review
+of packaged EPUB pages, run
+`pnpm review:ebooks output/ebooks output/review-style /path/to/chromium`.
+In-book links are repaired when their target ID or unique heading can be
+identified. Stale source links without a reliable target are rendered as plain
+text and listed in each book's `manifest.json` under `disabledLocalLinks`.
+External websites are not bundled into the book and require network access.
+Some Rust RFC source diagrams are unavailable even in the upstream PDF. Their
+locations remain in the EPUB as labeled source links; the release manifest
+records which images could not be embedded.
 
 ### Support us
 

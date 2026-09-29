@@ -13,6 +13,8 @@ export interface AppConfig {
       print_url: string;
       file_name: string;
       display_title?: string;
+      ebook_image_fallback_prefix?: string;
+      ebook_image_fallback_base?: string;
     }
   >;
 }

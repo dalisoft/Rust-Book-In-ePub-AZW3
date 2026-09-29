@@ -2,4 +2,7 @@ node_modules
 *.pdf
 .vscode
 output
+backups
+.cache
+local-calibre-map.json
 .DS_Store
