@@ -1,14 +1,18 @@
-name: Publish EPUB and AZW3 Monthly
+name: Publish EPUB and AZW3 When Sources Change
 
 on:
     push:
         branches: [main]
     schedule:
-        - cron: "0 0 1 * *"
+        - cron: "17 2 * * *"
     workflow_dispatch:
 
 permissions:
     contents: write
+
+concurrency:
+    group: ebook-release
+    cancel-in-progress: false
 
 jobs:
     build:
@@ -30,8 +34,28 @@ jobs:
                   node-version: 26
                   package-manager-cache: false
             - run: pnpm install --frozen-lockfile --ignore-scripts --store-dir .cache/pnpm-store
-            - run: pnpm exec playwright install chromium
+            - name: Compare official print pages with the latest release
+              id: sources
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  GH_REPO: ${{ github.repository }}
+              run: |
+                  mkdir -p .cache/source-check
+                  baseline=()
+                  if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+                    assets=$(gh release view --json assets --jq '.assets[].name')
+                    if grep -Fxq source-fingerprints.json <<< "$assets"; then
+                      gh release download --pattern source-fingerprints.json --dir .cache/source-check
+                      baseline=(--baseline=.cache/source-check/source-fingerprints.json)
+                    fi
+                  fi
+                  node scripts/check-source-updates.ts \
+                    --output=.cache/source-check/current-source-fingerprints.json \
+                    "${baseline[@]}" >> "$GITHUB_OUTPUT"
+            - if: steps.sources.outputs.changed == 'true'
+              run: pnpm exec playwright install chromium
             - name: Stage Calibre runtime libraries without system installation
+              if: steps.sources.outputs.changed == 'true'
               run: |
                   mkdir -p .cache/calibre-debs .cache/calibre-libs
                   (cd .cache/calibre-debs && apt download \
@@ -45,6 +69,7 @@ jobs:
                     ldd .cache/calibre-libs/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0
                   echo "LD_LIBRARY_PATH=$PWD/.cache/calibre-libs/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
             - name: Install Calibre in isolated project cache
+              if: steps.sources.outputs.changed == 'true'
               run: |
                   mkdir -p .cache/calibre
                   curl --fail --location --show-error --silent \
@@ -52,16 +77,20 @@ jobs:
                     https://download.calibre-ebook.com/linux-installer.sh
                   sh .cache/calibre-installer.sh "install_dir=$PWD/.cache/calibre" isolated=y version=9.15.0
             - name: Build and validate every ebook
+              if: steps.sources.outputs.changed == 'true'
               env:
                   CI: true
               run: sh scripts/ci-ebooks.sh all
             - name: Publish EPUB and AZW3 release
+              if: steps.sources.outputs.changed == 'true'
               env:
                   GH_TOKEN: ${{ github.token }}
                   GH_REPO: ${{ github.repository }}
               run: |
                   tag="release-${{ steps.date.outputs.date }}-${{ github.run_number }}"
                   files=(output/ebooks/*/*.epub output/ebooks/*/*.azw3)
+                  cp .cache/source-check/current-source-fingerprints.json .cache/source-check/source-fingerprints.json
+                  files+=(.cache/source-check/source-fingerprints.json)
                   for attempt in 1 2 3; do
                     if gh release view "$tag" >/dev/null 2>&1; then
                       gh release upload "$tag" "${files[@]}" --clobber || true

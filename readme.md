@@ -37,10 +37,13 @@ Chromium browser, and Calibre's `ebook-convert`/`ebook-meta` commands.
 For a single book, run `pnpm ebooks --book=RustPerformanceBook`; repeat
 `--book=KEY` for several books, or use `--all`. On a machine with an existing
 Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
-`Publish EPUB and AZW3 Monthly` runs on pushes to `main`, monthly, or manually.
-It builds every configured book, validates both formats, then publishes them
-as release assets only if the complete build succeeds. Its browser, package
-store, and Calibre installation stay inside the checked-out project.
+`Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
+02:17 UTC, or manually. Each release includes a fingerprint manifest for the
+official print pages. A scheduled run compares those pages with the latest
+release and exits successfully without rebuilding or publishing when they are
+unchanged. Pushes and manual runs always rebuild. A changed run validates both
+formats for every configured book before publishing; its browser, package
+store, and Calibre converter stay inside the checked-out project.
 
 To copy *existing* Calibre metadata and cover into generated formats, provide
 both `--calibre-library=/path/to/library` and
