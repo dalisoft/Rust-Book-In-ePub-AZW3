@@ -21,11 +21,16 @@ if [ -n "${CALIBRE_LIBRARY:-}" ] && [ -z "${METADATA_MAP:-}" ] ||
 fi
 if [ "${CI:-}" = true ]; then
     calibre_bin="$project_root/.cache/calibre/calibre"
-    [ -x "$calibre_bin/ebook-convert" ] || { echo "Project-local Calibre missing" >&2; exit 1; }
     export PATH="$calibre_bin:$PATH"
 fi
 
-command -v ebook-convert >/dev/null
+build_required=true
+if [ -n "${BOOK_BUILD_PLAN:-}" ]; then
+    build_required=$(node --input-type=module -e 'import fs from "node:fs"; console.log(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).buildKeys.length > 0)' "$BOOK_BUILD_PLAN")
+fi
+if [ "$build_required" = true ]; then
+    command -v ebook-convert >/dev/null
+fi
 bun run lint
 bun run typecheck
 bun run format:check
@@ -37,24 +42,23 @@ if [ -n "${CALIBRE_LIBRARY:-}" ] && [ -n "${METADATA_MAP:-}" ]; then
     set -- "$@" "--calibre-library=$CALIBRE_LIBRARY" "--metadata-map=$METADATA_MAP"
 fi
 if [ "${CI:-}" = true ] && [ "$book_option" = --all ]; then
-    bun run ebooks:workers "--output-dir=$output_dir"
+    if [ -n "${BOOK_BUILD_PLAN:-}" ]; then
+        bun run ebooks:workers "--output-dir=$output_dir" "--plan=$BOOK_BUILD_PLAN"
+    else
+        bun run ebooks:workers "--output-dir=$output_dir"
+    fi
 else
     bun run ebooks "$@"
 fi
 
-found=0
-for epub in "$output_dir"/*/*.epub; do
-    [ -f "$epub" ] || continue
-    found=1
-    azw3=${epub%.epub}.azw3
-    [ -s "$azw3" ]
-    unzip -tq "$epub" >/dev/null
-    python3 scripts/check-epub-links.py "$epub"
-    python3 scripts/check-epub-style.py "$epub"
-    if [ "$(basename "$epub")" = EasyRust.epub ]; then
-        python3 scripts/check-easy-rust-style.py "$epub"
-    fi
-    ebook-meta "$epub" >/dev/null
-    ebook-meta "$azw3" >/dev/null
-done
-[ "$found" -eq 1 ]
+set -- "--output-dir=$output_dir"
+if [ -n "${BOOK_BUILD_PLAN:-}" ]; then
+    set -- "$@" "--plan=$BOOK_BUILD_PLAN"
+fi
+node scripts/validate-ebooks.ts "$@"
+if [ -n "${BOOK_BUILD_PLAN:-}" ]; then
+    node scripts/finalize-ebook-cache.ts "--plan=$BOOK_BUILD_PLAN" \
+        "--output-dir=$output_dir" \
+        --output=.cache/source-check/source-fingerprints.json \
+        --files=.cache/source-check/release-files.txt
+fi

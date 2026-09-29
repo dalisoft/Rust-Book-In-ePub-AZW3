@@ -42,7 +42,8 @@ jobs:
                   .cache/bun/bun-linux-x64/bun --version
                   echo "$PWD/.cache/bun/bun-linux-x64" >> "$GITHUB_PATH"
             - run: bun ci --ignore-scripts
-            - name: Compare official print pages with the latest release
+            - run: bun run test:cache
+            - name: Hash sources and restore unchanged books from the latest release
               id: sources
               env:
                   GH_TOKEN: ${{ github.token }}
@@ -50,20 +51,23 @@ jobs:
               run: |
                   mkdir -p .cache/source-check
                   baseline=()
-                  if [ "$GITHUB_EVENT_NAME" = schedule ]; then
-                    assets=$(gh release view --json assets --jq '.assets[].name')
-                    if grep -Fxq source-fingerprints.json <<< "$assets"; then
-                      gh release download --pattern source-fingerprints.json --dir .cache/source-check
-                      baseline=(--baseline=.cache/source-check/source-fingerprints.json)
+                  if gh api "repos/$GH_REPO/releases/latest" > .cache/source-check/latest-release.json; then
+                    tag=$(jq -r .tag_name .cache/source-check/latest-release.json)
+                    if jq -e '.assets[] | select(.name == "source-fingerprints.json")' .cache/source-check/latest-release.json >/dev/null; then
+                      gh release download "$tag" --pattern source-fingerprints.json --dir .cache/source-check
+                      baseline=(--baseline=.cache/source-check/source-fingerprints.json --release=.cache/source-check/latest-release.json)
                     fi
                   fi
                   node scripts/check-source-updates.ts \
                     --output=.cache/source-check/current-source-fingerprints.json \
+                    --plan=.cache/source-check/build-plan.json \
+                    --source-dir=.cache/source-inputs \
+                    --output-dir=output/ebooks \
                     "${baseline[@]}" >> "$GITHUB_OUTPUT"
-            - if: steps.sources.outputs.changed == 'true'
+            - if: steps.sources.outputs.build_required == 'true'
               run: ./node_modules/.bin/playwright install chromium
             - name: Stage Calibre runtime libraries without system installation
-              if: steps.sources.outputs.changed == 'true'
+              if: steps.sources.outputs.build_required == 'true'
               run: |
                   mkdir -p .cache/calibre-debs .cache/calibre-libs
                   (cd .cache/calibre-debs && apt download \
@@ -77,18 +81,20 @@ jobs:
                     ldd .cache/calibre-libs/usr/lib/x86_64-linux-gnu/libxcb-cursor.so.0
                   echo "LD_LIBRARY_PATH=$PWD/.cache/calibre-libs/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
             - name: Install Calibre in isolated project cache
-              if: steps.sources.outputs.changed == 'true'
+              if: steps.sources.outputs.build_required == 'true'
               run: |
                   mkdir -p .cache/calibre
                   curl --fail --location --show-error --silent \
                     --output .cache/calibre-installer.sh \
                     https://download.calibre-ebook.com/linux-installer.sh
-                  sh .cache/calibre-installer.sh "install_dir=$PWD/.cache/calibre" isolated=y version=9.15.0
-            - name: Build and validate every ebook
+                  version=$(jq -r .converterVersion scripts/ebook-toolchain.json)
+                  sh .cache/calibre-installer.sh "install_dir=$PWD/.cache/calibre" isolated=y "version=$version"
+            - name: Build changed books and verify cached release formats
               if: steps.sources.outputs.changed == 'true'
               env:
                   CI: true
                   BOOK_BUILD_WORKERS: 4
+                  BOOK_BUILD_PLAN: .cache/source-check/build-plan.json
               run: sh scripts/ci-ebooks.sh all
             - name: Publish EPUB and AZW3 release
               if: steps.sources.outputs.changed == 'true'
@@ -97,8 +103,7 @@ jobs:
                   GH_REPO: ${{ github.repository }}
               run: |
                   tag="release-${{ steps.date.outputs.date }}-${{ github.run_number }}"
-                  files=(output/ebooks/*/*.epub output/ebooks/*/*.azw3)
-                  cp .cache/source-check/current-source-fingerprints.json .cache/source-check/source-fingerprints.json
+                  mapfile -t files < .cache/source-check/release-files.txt
                   files+=(.cache/source-check/source-fingerprints.json)
                   for attempt in 1 2 3; do
                     if gh release view "$tag" >/dev/null 2>&1; then
@@ -109,11 +114,11 @@ jobs:
                         --title "EPUB and AZW3 ${{ steps.date.outputs.date }}" \
                         --notes "Generated from the books' official print pages. EPUB styling and internal links validated. External links require internet; unavailable Rust RFC source diagrams appear as labeled links." || true
                     fi
-                    asset_count=$(gh release view "$tag" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
-                    if [ "$asset_count" -eq "${#files[@]}" ]; then
+                    if gh api "repos/$GH_REPO/releases/tags/$tag" > .cache/source-check/published-release.json &&
+                       node scripts/verify-release-cache.ts .cache/source-check/source-fingerprints.json .cache/source-check/published-release.json; then
                       exit 0
                     fi
                     sleep "$((attempt * 10))"
                   done
-                  echo "Release upload incomplete: $asset_count/${#files[@]} assets" >&2
+                  echo "Release upload did not pass complete asset hash verification" >&2
                   exit 1

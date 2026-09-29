@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { getProjectRoot, loadConfig } from "../src/shared/config.ts";
+import type { BuildPlan } from "./ebook-cache.ts";
 
 const root = getProjectRoot(import.meta.url);
 const config = loadConfig(import.meta.url);
@@ -12,26 +13,42 @@ const bookArgs = process.argv
 const outputArg = process.argv
   .slice(2)
   .find((arg) => arg.startsWith("--output-dir="));
+const planArg = process.argv.slice(2).find((arg) => arg.startsWith("--plan="));
 if (
-  process.argv.slice(2).some((arg) => !/^--(book|output-dir)=/.test(arg)) ||
+  process.argv
+    .slice(2)
+    .some((arg) => !/^--(book|output-dir|plan)=/.test(arg)) ||
   !outputArg
 ) {
   throw new Error(
-    "Usage: node scripts/build-ebooks-workers.ts --output-dir=PATH [--book=KEY ...]",
+    "Usage: node scripts/build-ebooks-workers.ts --output-dir=PATH [--book=KEY ... | --plan=PATH]",
   );
 }
 if (process.env.CALIBRE_LIBRARY || process.env.METADATA_MAP) {
   throw new Error("The CI worker build must not access a Calibre library");
 }
 const outputDir = path.resolve(outputArg.slice("--output-dir=".length));
-const keys = bookArgs.length
-  ? bookArgs.map((arg) => arg.slice("--book=".length))
-  : Object.keys(config.Books);
+const plan =
+  planArg &&
+  (JSON.parse(
+    fs.readFileSync(path.resolve(planArg.slice(7)), "utf8"),
+  ) as BuildPlan);
+if (plan && (plan.version !== 1 || bookArgs.length))
+  throw new Error("Invalid or conflicting build plan");
+const keys = plan
+  ? plan.buildKeys
+  : bookArgs.length
+    ? bookArgs.map((arg) => arg.slice("--book=".length))
+    : Object.keys(config.Books);
 if (
   new Set(keys).size !== keys.length ||
   keys.some((key) => !/^[A-Za-z0-9_-]+$/.test(key) || !config.Books[key])
 ) {
   throw new Error("Unknown, unsafe, or duplicate book key");
+}
+if (keys.length === 0) {
+  console.log("No books need conversion; using verified cached formats");
+  process.exit(0);
 }
 const requestedWorkers = Number(process.env.BOOK_BUILD_WORKERS ?? "4");
 if (
@@ -74,6 +91,7 @@ async function runWorker(index: number, books: string[]): Promise<number> {
   ];
   if (process.env.CHROMIUM_PATH)
     args.push(`--chromium=${process.env.CHROMIUM_PATH}`);
+  if (plan) args.push(`--source-dir=${plan.sourceDir}`);
   return await new Promise<number>((resolve) => {
     const child = spawn(process.execPath, args, {
       cwd: root,

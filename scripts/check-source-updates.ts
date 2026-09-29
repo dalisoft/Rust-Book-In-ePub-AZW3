@@ -1,93 +1,119 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import pLimit from "p-limit";
-import { loadConfig } from "../src/shared/config.ts";
+import { getProjectRoot, loadConfig } from "../src/shared/config.ts";
 import { normalizeHttpUrl } from "../src/shared/url.ts";
+import {
+  prepareBuildPlan,
+  readSnapshot,
+  recipeHash,
+  scanBook,
+  validArtifact,
+  type Release,
+  type Snapshot,
+} from "./ebook-cache.ts";
 
-type Source = { url: string; sha256: string };
-type Snapshot = { version: 1; sources: Record<string, Source> };
-
+const run = promisify(execFile);
+const root = getProjectRoot(import.meta.url);
 const config = loadConfig(import.meta.url);
-const outputArg = process.argv.find((arg) => arg.startsWith("--output="));
-const baselineArg = process.argv.find((arg) => arg.startsWith("--baseline="));
-if (
-  !outputArg ||
-  process.argv.slice(2).some((arg) => !/^--(output|baseline)=/.test(arg))
-) {
-  throw new Error(
-    "Usage: node scripts/check-source-updates.ts --output=PATH [--baseline=PATH]",
-  );
-}
-const output = path.resolve(outputArg.slice("--output=".length));
-const baselinePath =
-  baselineArg && path.resolve(baselineArg.slice("--baseline=".length));
-
-async function fingerprint(url: string): Promise<string> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(90_000),
-        headers: { "User-Agent": "Rust-Book-In-ePub-AZW3 source check" },
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = Buffer.from(await response.arrayBuffer());
-      if (body.length < 1000 || !/<main(?:\s|>)/i.test(body.toString("utf8"))) {
-        throw new Error(
-          "Response does not contain a print-book <main> element",
-        );
-      }
-      return createHash("sha256").update(body).digest("hex");
-    } catch (error) {
-      if (attempt === 2) throw new Error(`${url}: ${error}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
-    }
-  }
-  throw new Error(`${url}: retries exhausted`);
-}
-
+const options = new Map(
+  process.argv.slice(2).map((arg) => {
+    const match =
+      /^--(output|baseline|plan|source-dir|output-dir|release)=(.+)$/.exec(arg);
+    if (!match) throw new Error(`Unknown argument: ${arg}`);
+    return [match[1], path.resolve(match[2])];
+  }),
+);
+for (const option of ["output", "plan", "source-dir", "output-dir"])
+  if (!options.has(option)) throw new Error(`Missing --${option}=PATH`);
+const baseline = options.has("baseline")
+  ? readSnapshot(options.get("baseline")!)
+  : undefined;
+const release = options.has("release")
+  ? (JSON.parse(fs.readFileSync(options.get("release")!, "utf8")) as Release)
+  : undefined;
+const sourceDir = options.get("source-dir")!;
 const limit = pLimit(4);
+const imageLimit = pLimit(8);
 const entries = await Promise.all(
   Object.entries(config.Books)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, book]) =>
-      limit(async (): Promise<[string, Source]> => {
-        const url = normalizeHttpUrl(book.print_url);
-        return [key, { url, sha256: await fingerprint(url) }];
-      }),
+      limit(
+        async () =>
+          [
+            key,
+            await scanBook(
+              key,
+              book,
+              normalizeHttpUrl(book.print_url),
+              recipeHash(root, book),
+              baseline?.sources[key],
+              sourceDir,
+              imageLimit,
+            ),
+          ] as const,
+      ),
     ),
 );
-const snapshot: Snapshot = { version: 1, sources: Object.fromEntries(entries) };
-fs.mkdirSync(path.dirname(output), { recursive: true });
-fs.writeFileSync(output, `${JSON.stringify(snapshot, null, 2)}\n`);
-
-let changed = true;
-if (baselinePath) {
-  const baseline = JSON.parse(
-    fs.readFileSync(baselinePath, "utf8"),
-  ) as Snapshot;
-  if (
-    baseline.version !== 1 ||
-    !baseline.sources ||
-    typeof baseline.sources !== "object"
-  ) {
-    throw new Error("Unsupported source fingerprint baseline");
-  }
-  const keys = new Set([
-    ...Object.keys(baseline.sources),
-    ...Object.keys(snapshot.sources),
-  ]);
-  const updated = [...keys].filter(
-    (key) =>
-      baseline.sources[key]?.url !== snapshot.sources[key]?.url ||
-      baseline.sources[key]?.sha256 !== snapshot.sources[key]?.sha256,
-  );
-  changed = updated.length > 0;
-  console.error(
-    updated.length
-      ? `Changed sources: ${updated.join(", ")}`
-      : "Official print pages unchanged",
-  );
+const snapshot: Snapshot = { version: 2, sources: Object.fromEntries(entries) };
+const plan = await prepareBuildPlan(
+  snapshot,
+  baseline,
+  sourceDir,
+  options.get("output-dir")!,
+  release,
+  async (key, folder) => {
+    if (!release) throw new Error("No release available for artifact restore");
+    const temp = fs.mkdtempSync(path.join(sourceDir, "restore-"));
+    try {
+      await run(
+        "gh",
+        [
+          "release",
+          "download",
+          release.tag_name,
+          "--pattern",
+          `${key}.epub`,
+          "--pattern",
+          `${key}.azw3`,
+          "--dir",
+          temp,
+        ],
+        { timeout: 120_000, maxBuffer: 1024 * 1024 },
+      );
+      for (const format of ["epub", "azw3"] as const)
+        if (
+          !validArtifact(
+            path.join(temp, `${key}.${format}`),
+            baseline!.sources[key].artifacts![format],
+          )
+        )
+          throw new Error(`Corrupt release asset: ${key}.${format}`);
+      fs.mkdirSync(folder, { recursive: true });
+      for (const format of ["epub", "azw3"])
+        fs.copyFileSync(
+          path.join(temp, `${key}.${format}`),
+          path.join(folder, `${key}.${format}`),
+        );
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  },
+);
+for (const [option, value] of [
+  ["output", snapshot],
+  ["plan", plan],
+] as const) {
+  const file = options.get(option)!;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
-console.log(`changed=${changed}`);
+console.error(
+  `Books to build: ${plan.buildKeys.length} (${plan.buildKeys.join(", ") || "none"}); reused: ${plan.reusedKeys.length}; removed: ${plan.removedKeys.length}`,
+);
+console.log(`changed=${!!(plan.buildKeys.length || plan.removedKeys.length)}`);
+console.log(`build_required=${plan.buildKeys.length > 0}`);

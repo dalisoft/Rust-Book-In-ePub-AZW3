@@ -39,11 +39,19 @@ For a single book, run `bun run ebooks --book=RustPerformanceBook`; repeat
 Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
 `Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
 02:17 UTC, or manually. Each release includes a fingerprint manifest for the
-official print pages. A scheduled run compares those pages with the latest
-release and exits successfully without rebuilding or publishing when they are
-unchanged. Pushes and manual runs always rebuild. A changed run validates both
-formats for every configured book before publishing; its browser, package
-store, and Calibre converter stay inside the checked-out project.
+official print pages. Every run hashes each page and its referenced image bytes,
+then compares them with the latest release's `source-fingerprints.json` cache.
+Only changed books rebuild. Unchanged EPUB/AZW3 assets are restored from that
+release and verified by SHA-256 and size. An entirely unchanged run exits
+successfully before installing a browser or converter, with no new release.
+The cache also hashes each book's settings, styling, conversion and validation
+code, dependency lockfile, Node major version, and pinned converter version;
+changes to those inputs invalidate the affected books. Older releases seed the
+cache with one full rebuild. Missing or corrupt cached formats rebuild safely.
+New formats pass link, styling, archive, and metadata checks; reused formats
+retain their matching validation recipe and are checked again by SHA-256.
+Every published release still contains both formats for every configured book;
+its browser, package store, and converter stay inside the checked-out project.
 On CI, four process workers build independent books in separate output folders
 and converter config directories. The large Rust RFCs book starts in its own
 worker while the others divide the remaining books. In measured full CI runs,
@@ -51,6 +59,11 @@ four workers completed build and validation faster than one or two workers;
 the speedup is limited because the Rust RFCs build dominates. Publication still
 waits for every book and format check to pass. Set `BOOK_BUILD_WORKERS` to 1–4
 to tune the count.
+
+Source checks save the fetched pages and images for conversion, so a book builds
+from the same bytes that were hashed instead of fetching its page twice. Image
+downloads and validation run concurrently within bounded limits. Missing Rust
+RFC diagrams are rechecked and remain labeled source links until available.
 
 To copy *existing* Calibre metadata and cover into generated formats, provide
 both `--calibre-library=/path/to/library` and

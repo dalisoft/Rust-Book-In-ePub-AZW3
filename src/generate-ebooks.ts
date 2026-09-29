@@ -2,9 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chromium, type APIRequestContext } from "playwright";
+import { chromium } from "playwright";
+import pLimit from "p-limit";
 import { getProjectRoot, loadConfig } from "./shared/config.ts";
 import { normalizeHttpUrl } from "./shared/url.ts";
+import {
+  cachedImage,
+  cacheImage,
+  downloadImage,
+  sha256,
+  type ImageSource,
+} from "./shared/ebook-sources.ts";
 
 type Args = {
   books: string[];
@@ -13,6 +21,7 @@ type Args = {
   calibreLibrary?: string;
   metadataMap?: string;
   chromiumPath?: string;
+  sourceDir?: string;
 };
 
 const root = getProjectRoot(import.meta.url);
@@ -39,6 +48,8 @@ function options(): Args {
       args.metadataMap = path.resolve(arg.slice(15));
     else if (arg.startsWith("--chromium="))
       args.chromiumPath = path.resolve(arg.slice(11));
+    else if (arg.startsWith("--source-dir="))
+      args.sourceDir = path.resolve(arg.slice(13));
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (args.books.length === 0 && !args.all) {
@@ -72,23 +83,6 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll('"', "&quot;");
-}
-
-async function fetchImage(request: APIRequestContext, url: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await request.get(url, { timeout: 45_000 });
-      if (
-        ![408, 429, 500, 502, 503, 504].includes(response.status()) ||
-        attempt === 2
-      )
-        return response;
-    } catch (error) {
-      if (attempt === 2) throw error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
-  }
-  throw new Error(`Image retry exhausted: ${url}`);
 }
 
 function runConvert(
@@ -176,12 +170,45 @@ async function main(): Promise<void> {
       try {
         console.log(`${key}: fetching ${url}`);
         const page = await context.newPage();
-        const response = await page.goto(url, {
+        let pageUrl = url;
+        let sourceSha256: string | undefined;
+        let verifiedImages: string[] = [];
+        if (args.sourceDir) {
+          const input = path.join(args.sourceDir, key);
+          const captured = JSON.parse(
+            fs.readFileSync(path.join(input, "page.json"), "utf8"),
+          ) as {
+            url: string;
+            finalUrl: string;
+            sha256: string;
+            verifiedImages: string[];
+          };
+          const bytes = fs.readFileSync(path.join(input, "page.html"));
+          if (captured.url !== url || sha256(bytes) !== captured.sha256)
+            throw new Error(`Corrupt or mismatched captured source: ${key}`);
+          sourceSha256 = captured.sha256;
+          verifiedImages = captured.verifiedImages;
+          pageUrl = captured.finalUrl;
+          await page.route("**/*", async (route) => {
+            if (
+              route.request().isNavigationRequest() &&
+              route.request().url() === pageUrl
+            )
+              await route.fulfill({
+                status: 200,
+                contentType: "text/html; charset=utf-8",
+                body: bytes,
+              });
+            else await route.abort();
+          });
+        }
+        const response = await page.goto(pageUrl, {
           waitUntil: "domcontentloaded",
           timeout: 90_000,
         });
         if (!response?.ok())
           throw new Error(`HTTP ${response?.status() ?? "no response"}`);
+        sourceSha256 ??= sha256(await response.body());
         const extracted = await page.evaluate((bookKey) => {
           const main = document.querySelector("main");
           if (!main) throw new Error("No <main> book content found");
@@ -383,6 +410,27 @@ async function main(): Promise<void> {
         let html = extracted.html;
         const downloadedImages = new Map<string, string>();
         const unavailableImages = new Map<string, string>();
+        const imageLimit = pLimit(6);
+        const sourceImages: Record<string, ImageSource> = {};
+        const imageFolder =
+          args.sourceDir && path.join(args.sourceDir, key, "images");
+        const downloads = new Map(
+          await Promise.all(
+            [...new Set(extracted.images.map((image) => image.url))].map(
+              (imageUrl) =>
+                imageLimit(async () => {
+                  const image =
+                    (imageFolder &&
+                      verifiedImages.includes(imageUrl) &&
+                      cachedImage(imageFolder, imageUrl)) ||
+                    (await downloadImage(key, book, imageUrl));
+                  if (imageFolder) cacheImage(imageFolder, imageUrl, image);
+                  sourceImages[imageUrl] = image.source;
+                  return [imageUrl, image] as const;
+                }),
+            ),
+          ),
+        );
         const linkUnavailableImage = (
           image: (typeof extracted.images)[number],
         ) => {
@@ -408,60 +456,17 @@ async function main(): Promise<void> {
             linkUnavailableImage(image);
             continue;
           }
-          let bytes: Buffer;
-          let name: string;
-          try {
-            let assetUrl = image.url;
-            let assetResponse = await fetchImage(context.request, assetUrl);
-            if (
-              assetResponse.status() === 404 &&
-              new URL(assetUrl).hostname === "rawgit.com"
-            ) {
-              assetUrl = `https://raw.githubusercontent.com${new URL(assetUrl).pathname}`;
-              assetResponse = await fetchImage(context.request, assetUrl);
-            }
-            if (
-              assetResponse.status() === 404 &&
-              book.ebook_image_fallback_prefix &&
-              book.ebook_image_fallback_base &&
-              assetUrl.startsWith(book.ebook_image_fallback_prefix)
-            ) {
-              assetUrl = new URL(
-                assetUrl.slice(book.ebook_image_fallback_prefix.length),
-                book.ebook_image_fallback_base,
-              ).href;
-              assetResponse = await fetchImage(context.request, assetUrl);
-            }
-            if (
-              key === "RustRFCs" &&
-              new URL(assetUrl).protocol === "http:" &&
-              (!assetResponse.ok() ||
-                !assetResponse
-                  .headers()
-                  ["content-type"]?.toLowerCase()
-                  .startsWith("image/"))
-            ) {
-              assetUrl = assetUrl.replace(/^http:/, "https:");
-              assetResponse = await fetchImage(context.request, assetUrl);
-            }
-            if (!assetResponse.ok())
-              throw new Error(
-                `Image HTTP ${assetResponse.status()}: ${assetUrl}`,
-              );
-            const contentType = assetResponse.headers()["content-type"] ?? "";
-            if (!contentType.toLowerCase().startsWith("image/"))
-              throw new Error(`Non-image asset: ${assetUrl}`);
-            bytes = await assetResponse.body();
-            if (bytes.length === 0 || bytes.length > 25 * 1024 * 1024)
-              throw new Error(`Invalid image size: ${assetUrl}`);
-            name = `${String(index + 1).padStart(4, "0")}${mimeExtension(image.url, contentType)}`;
-          } catch (error) {
-            if (key !== "RustRFCs") throw error;
-            unavailableImages.set(image.url, String(error).split("\n")[0]);
+          const downloaded = downloads.get(image.url)!;
+          if (!downloaded.bytes) {
+            unavailableImages.set(
+              image.url,
+              `Unavailable source image: ${downloaded.source.resolvedUrl}`,
+            );
             linkUnavailableImage(image);
             continue;
           }
-          fs.writeFileSync(path.join(stage, "assets", name), bytes);
+          const name = `${String(index + 1).padStart(4, "0")}${mimeExtension(image.url, downloaded.source.contentType!)}`;
+          fs.writeFileSync(path.join(stage, "assets", name), downloaded.bytes);
           const localPath = `assets/${name}`;
           downloadedImages.set(image.url, localPath);
           html = html.replace(image.placeholder, localPath);
@@ -509,6 +514,8 @@ async function main(): Promise<void> {
         const manifest = {
           key,
           url,
+          sourceSha256,
+          sourceImages,
           title: metadata?.title ?? title,
           sourceTitle: title,
           chapters: extracted.chapters,
