@@ -33,7 +33,7 @@ if (
 ) {
   throw new Error("Unknown, unsafe, or duplicate book key");
 }
-const requestedWorkers = Number(process.env.BOOK_BUILD_WORKERS ?? "4");
+const requestedWorkers = Number(process.env.BOOK_BUILD_WORKERS ?? "2");
 if (
   !Number.isInteger(requestedWorkers) ||
   requestedWorkers < 1 ||

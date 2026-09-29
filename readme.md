@@ -44,10 +44,11 @@ release and exits successfully without rebuilding or publishing when they are
 unchanged. Pushes and manual runs always rebuild. A changed run validates both
 formats for every configured book before publishing; its browser, package
 store, and Calibre converter stay inside the checked-out project.
-On CI, four process workers build independent books in separate output folders
+On CI, two process workers build independent books in separate output folders
 and Calibre config directories. The large Rust RFCs book starts in its own
-worker; publication still waits for every book and format check to pass.
-Set `BOOK_BUILD_WORKERS` to 1–4 to tune the worker count.
+worker; the other worker builds the remaining books. Four workers were slower
+for Rust RFCs on the four-core runner. Publication still waits for every book
+and format check to pass. Set `BOOK_BUILD_WORKERS` to 1–4 to tune the count.
 
 To copy *existing* Calibre metadata and cover into generated formats, provide
 both `--calibre-library=/path/to/library` and
