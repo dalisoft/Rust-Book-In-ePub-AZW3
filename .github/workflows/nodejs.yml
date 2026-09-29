@@ -60,8 +60,22 @@ jobs:
                   GH_TOKEN: ${{ github.token }}
                   GH_REPO: ${{ github.repository }}
               run: |
-                  gh release create "release-${{ steps.date.outputs.date }}-${{ github.run_number }}" \
-                    output/ebooks/*/*.epub output/ebooks/*/*.azw3 \
-                    --target "$GITHUB_SHA" \
-                    --title "EPUB and AZW3 ${{ steps.date.outputs.date }}" \
-                    --notes "Generated from the books' official print pages. EPUB styling and internal links validated. External links require internet; unavailable Rust RFC source diagrams appear as labeled links."
+                  tag="release-${{ steps.date.outputs.date }}-${{ github.run_number }}"
+                  files=(output/ebooks/*/*.epub output/ebooks/*/*.azw3)
+                  for attempt in 1 2 3; do
+                    if gh release view "$tag" >/dev/null 2>&1; then
+                      gh release upload "$tag" "${files[@]}" --clobber || true
+                    else
+                      gh release create "$tag" "${files[@]}" \
+                        --target "$GITHUB_SHA" \
+                        --title "EPUB and AZW3 ${{ steps.date.outputs.date }}" \
+                        --notes "Generated from the books' official print pages. EPUB styling and internal links validated. External links require internet; unavailable Rust RFC source diagrams appear as labeled links." || true
+                    fi
+                    asset_count=$(gh release view "$tag" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+                    if [ "$asset_count" -eq "${#files[@]}" ]; then
+                      exit 0
+                    fi
+                    sleep "$((attempt * 10))"
+                  done
+                  echo "Release upload incomplete: $asset_count/${#files[@]} assets" >&2
+                  exit 1
