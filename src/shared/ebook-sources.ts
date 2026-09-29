@@ -47,10 +47,7 @@ export async function downloadImage(
   try {
     // RFCs contain obsolete external HTTP diagrams. Try HTTPS first so a
     // blocked HTTP request cannot delay every otherwise unchanged daily run.
-    const request = (imageUrl: string) =>
-      key === "RustRFCs"
-        ? fetchSource(imageUrl, 1, 15_000)
-        : fetchSource(imageUrl);
+    const request = (imageUrl: string) => fetchSource(imageUrl);
     let response: Response;
     if (key === "RustRFCs" && resolvedUrl.startsWith("http:")) {
       resolvedUrl = resolvedUrl.replace(/^http:/, "https:");
