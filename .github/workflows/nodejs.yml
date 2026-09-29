@@ -88,7 +88,7 @@ jobs:
               if: steps.sources.outputs.changed == 'true'
               env:
                   CI: true
-                  BOOK_BUILD_WORKERS: 2
+                  BOOK_BUILD_WORKERS: 4
               run: sh scripts/ci-ebooks.sh all
             - name: Publish EPUB and AZW3 release
               if: steps.sources.outputs.changed == 'true'
