@@ -36,7 +36,11 @@ fi
 if [ -n "${CALIBRE_LIBRARY:-}" ] && [ -n "${METADATA_MAP:-}" ]; then
     set -- "$@" "--calibre-library=$CALIBRE_LIBRARY" "--metadata-map=$METADATA_MAP"
 fi
-bun run ebooks "$@"
+if [ "${CI:-}" = true ] && [ "$book_option" = --all ]; then
+    bun run ebooks:workers "--output-dir=$output_dir"
+else
+    bun run ebooks "$@"
+fi
 
 found=0
 for epub in "$output_dir"/*/*.epub; do

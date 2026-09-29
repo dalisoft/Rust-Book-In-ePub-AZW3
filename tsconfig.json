@@ -13,5 +13,5 @@
         "verbatimModuleSyntax": true
     },
     "exclude": ["node_modules", "docs"],
-    "include": ["src"]
+    "include": ["src", "scripts/*.ts"]
 }
