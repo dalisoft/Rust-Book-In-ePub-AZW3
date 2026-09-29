@@ -6,6 +6,7 @@ import { chromium } from "playwright";
 import pLimit from "p-limit";
 import { getProjectRoot, loadConfig } from "./shared/config.ts";
 import { normalizeHttpUrl } from "./shared/url.ts";
+import { sectionBook } from "./shared/ebook-sections.ts";
 import {
   cachedImage,
   cacheImage,
@@ -91,6 +92,8 @@ function runConvert(
   extra: string[],
   logFile: string,
 ): void {
+  const started = performance.now();
+  console.log(`${path.basename(output)}: conversion started`);
   const result = spawnSync("ebook-convert", [input, output, ...extra], {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
@@ -106,6 +109,9 @@ function runConvert(
       `Conversion failed for ${output}; see ${logFile}: ${result.error ?? result.status}`,
     );
   }
+  console.log(
+    `${path.basename(output)}: converted in ${((performance.now() - started) / 1000).toFixed(1)}s`,
+  );
 }
 
 function calibreMetadata(
@@ -209,6 +215,7 @@ async function main(): Promise<void> {
         if (!response?.ok())
           throw new Error(`HTTP ${response?.status() ?? "no response"}`);
         sourceSha256 ??= sha256(await response.body());
+        const extractionStarted = performance.now();
         const extracted = await page.evaluate((bookKey) => {
           const main = document.querySelector("main");
           if (!main) throw new Error("No <main> book content found");
@@ -314,9 +321,11 @@ async function main(): Promise<void> {
               .replace(/[\uFE0E\uFE0F?]/g, "")
               .toLowerCase();
           const normalizedIds = new Map<string, string>();
+          const exactIds = new Set<string>();
           const ambiguousIds = new Set<string>();
           body.querySelectorAll("[id]").forEach((node) => {
             const id = node.id;
+            exactIds.add(id);
             const normalized = normalizeFragment(id);
             if (
               normalizedIds.has(normalized) &&
@@ -355,7 +364,7 @@ async function main(): Promise<void> {
             const normalized = normalizeFragment(targetId);
             const headingText = normalizeHeading(link.textContent ?? "");
             const localId =
-              targetId && body.querySelector(`#${CSS.escape(targetId)}`)
+              targetId && exactIds.has(targetId)
                 ? targetId
                 : !ambiguousIds.has(normalized)
                   ? normalizedIds.get(normalized)
@@ -401,6 +410,9 @@ async function main(): Promise<void> {
             disabledLocalLinks,
           };
         }, key);
+        console.log(
+          `${key}: extracted in ${((performance.now() - extractionStarted) / 1000).toFixed(1)}s`,
+        );
         if (extracted.chapters < 1 || extracted.html.length < 2000)
           throw new Error("Book content too small");
         if (extracted.disabledLocalLinks.length)
@@ -477,6 +489,43 @@ async function main(): Promise<void> {
           htmlFile,
           `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${ebookCss}</style></head><body>${html}</body></html>`,
         );
+        let conversionInput = htmlFile;
+        if (Buffer.byteLength(html) > 512 * 1024) {
+          const parts = await page.evaluate(sectionBook, html);
+          fs.writeFileSync(path.join(stage, "book.css"), ebookCss);
+          for (const part of parts)
+            fs.writeFileSync(
+              path.join(stage, part.name),
+              `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="book.css"></head><body>${part.html}</body></html>`,
+            );
+          const items = parts.map(
+            (part, index) =>
+              `<item id="part${index}" href="${part.name}" media-type="text/html"/>`,
+          );
+          items.push('<item id="css" href="book.css" media-type="text/css"/>');
+          for (const [index, file] of [
+            ...downloadedImages.values(),
+          ].entries()) {
+            const ext = path.extname(file).slice(1);
+            const mime =
+              ext === "svg"
+                ? "image/svg+xml"
+                : ["jpg", "jpeg"].includes(ext)
+                  ? "image/jpeg"
+                  : `image/${ext}`;
+            items.push(
+              `<item id="image${index}" href="${file}" media-type="${mime}"/>`,
+            );
+          }
+          conversionInput = path.join(stage, "book.opf");
+          fs.writeFileSync(
+            conversionInput,
+            `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${escapeHtml(title)}</dc:title><dc:language>en</dc:language><dc:identifier id="book-id">${sourceSha256}</dc:identifier></metadata><manifest>${items.join("")}</manifest><spine>${parts.map((_, index) => `<itemref idref="part${index}"/>`).join("")}</spine></package>`,
+          );
+          console.log(
+            `${key}: pre-sectioned into ${parts.length} bounded input flows`,
+          );
+        }
         const metadata = calibreMetadata(key, args, map);
         const epub = path.join(folder, `${key}.epub`);
         const azw3 = path.join(folder, `${key}.azw3`);
@@ -488,7 +537,7 @@ async function main(): Promise<void> {
             ? '//*[name()="h2"]'
             : '//*[name()="h1"]';
         runConvert(
-          htmlFile,
+          conversionInput,
           epub,
           [
             ...metaArgs,
@@ -506,9 +555,27 @@ async function main(): Promise<void> {
         runConvert(
           epub,
           azw3,
-          metadata
-            ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
-            : [],
+          [
+            ...(metadata
+              ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
+              : []),
+            // PalmDOC compression dominates CPU time on very large text books.
+            // Uncompressed AZW3 is supported by the converter and Kindle; only
+            // file size changes, not content, images, styling or navigation.
+            ...(Buffer.byteLength(html) > 5 * 1024 * 1024
+              ? [
+                  "--dont-compress",
+                  "--chapter-mark",
+                  "none",
+                  "--page-breaks-before",
+                  "/",
+                  // Input flows already bound the reader's working set. Avoid
+                  // re-splitting thousands of forced web-print heading breaks.
+                  "--extra-css",
+                  "h1,h2,hr,div { page-break-before: auto !important; break-before: auto !important; }",
+                ]
+              : []),
+          ],
           path.join(folder, "azw3-convert.log"),
         );
         const manifest = {

@@ -64,12 +64,12 @@ const groups = Array.from(
 );
 const remaining = [...keys];
 if (groups.length > 1 && remaining.includes("RustRFCs")) {
-  // The RFC book took about four minutes in the serial CI build. Start it
-  // immediately and overlap it with all other books.
+  // Start the largest book immediately. Pre-sectioning now makes it fast
+  // enough to share work, rather than leaving this worker idle afterward.
   groups[0].push("RustRFCs");
   remaining.splice(remaining.indexOf("RustRFCs"), 1);
   remaining.forEach((key, index) =>
-    groups[1 + (index % (groups.length - 1))].push(key),
+    groups[(index + 1) % groups.length].push(key),
   );
 } else {
   remaining.forEach((key, index) => groups[index % groups.length].push(key));

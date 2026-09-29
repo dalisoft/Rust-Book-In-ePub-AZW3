@@ -36,7 +36,9 @@ try {
     const pages = fs
       .readdirSync(folder)
       .filter(
-        (name) => name === "book.html" || /^book_split_.*\.html$/.test(name),
+        (name) =>
+          name === "book.html" ||
+          /^(?:book_split_.*|part-\d+(?:_split_\d+)?)\.html$/.test(name),
       )
       .sort();
     const sample =

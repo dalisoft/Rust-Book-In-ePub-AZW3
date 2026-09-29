@@ -49,6 +49,7 @@ await Promise.all(
         ["unzip", ["-tq", epub]],
         ["python3", [path.join(root, "scripts/check-epub-links.py"), epub]],
         ["python3", [path.join(root, "scripts/check-epub-style.py"), epub]],
+        ["python3", [path.join(root, "scripts/check-epub-content.py"), epub]],
         ...(key === "EasyRust"
           ? ([
               [

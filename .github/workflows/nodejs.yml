@@ -6,6 +6,11 @@ on:
     schedule:
         - cron: "17 2 * * *"
     workflow_dispatch:
+        inputs:
+            force_rebuild:
+                description: Rebuild all books without reusing release artifacts
+                type: boolean
+                default: false
 
 permissions:
     contents: write
@@ -51,7 +56,7 @@ jobs:
               run: |
                   mkdir -p .cache/source-check
                   baseline=()
-                  if gh api "repos/$GH_REPO/releases/latest" > .cache/source-check/latest-release.json; then
+                  if [ "${{ inputs.force_rebuild }}" != true ] && gh api "repos/$GH_REPO/releases/latest" > .cache/source-check/latest-release.json; then
                     tag=$(jq -r .tag_name .cache/source-check/latest-release.json)
                     if jq -e '.assets[] | select(.name == "source-fingerprints.json")' .cache/source-check/latest-release.json >/dev/null; then
                       gh release download "$tag" --pattern source-fingerprints.json --dir .cache/source-check

@@ -53,12 +53,21 @@ retain their matching validation recipe and are checked again by SHA-256.
 Every published release still contains both formats for every configured book;
 its browser, package store, and converter stay inside the checked-out project.
 On CI, four process workers build independent books in separate output folders
-and converter config directories. The large Rust RFCs book starts in its own
-worker while the others divide the remaining books. In measured full CI runs,
-four workers completed build and validation faster than one or two workers;
-the speedup is limited because the Rust RFCs build dominates. Publication still
+and converter config directories. The large Rust RFCs book starts first, and
+all four workers share the remaining books. Large print pages are pre-sectioned
+into bounded, intact HTML blocks with cross-section anchors repaired before
+conversion. Books over 5 MiB of staged HTML use supported uncompressed AZW3
+and avoid redundant web-print page splits: content, images and typography are
+preserved, at the cost of a larger AZW3 file. Full staged text and block counts
+are checked against the EPUB in reading order. Publication still
 waits for every book and format check to pass. Set `BOOK_BUILD_WORKERS` to 1–4
 to tune the count.
+
+For a genuine cold-build measurement, manually dispatch the workflow with
+`force_rebuild` enabled. This fetches fresh sources and images and rebuilds all
+configured books without restoring any release artifacts. Conversion-stage
+timings are printed in the build log. Normal daily runs still skip unchanged
+books.
 
 Source checks save the fetched pages and images for conversion, so a book builds
 from the same bytes that were hashed instead of fetching its page twice. Image

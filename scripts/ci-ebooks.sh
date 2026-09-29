@@ -34,6 +34,9 @@ fi
 bun run lint
 bun run typecheck
 bun run format:check
+if [ "$build_required" = true ]; then
+    node scripts/test-ebook-sections.ts
+fi
 set -- "$book_option" "--output-dir=$output_dir"
 if [ -n "${CHROMIUM_PATH:-}" ]; then
     set -- "$@" "--chromium=$CHROMIUM_PATH"

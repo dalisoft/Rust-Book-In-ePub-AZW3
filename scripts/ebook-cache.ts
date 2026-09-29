@@ -151,6 +151,7 @@ export async function prepareBuildPlan(
 export function recipeHash(root: string, book: BookConfig): string {
   const inputs = [
     "src/generate-ebooks.ts",
+    "src/shared/ebook-sections.ts",
     "src/ebook-format.css",
     "src/shared/config.ts",
     "src/shared/url.ts",
@@ -162,6 +163,7 @@ export function recipeHash(root: string, book: BookConfig): string {
     "scripts/validate-ebooks.ts",
     "scripts/check-epub-links.py",
     "scripts/check-epub-style.py",
+    "scripts/check-epub-content.py",
     "scripts/check-easy-rust-style.py",
   ].map((file) => [file, sha256(fs.readFileSync(path.join(root, file)))]);
   return sha256(

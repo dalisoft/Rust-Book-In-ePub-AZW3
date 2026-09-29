@@ -176,6 +176,7 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const files = [
     "src/generate-ebooks.ts",
+    "src/shared/ebook-sections.ts",
     "src/ebook-format.css",
     "src/shared/config.ts",
     "src/shared/url.ts",
@@ -187,6 +188,7 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
     "scripts/validate-ebooks.ts",
     "scripts/check-epub-links.py",
     "scripts/check-epub-style.py",
+    "scripts/check-epub-content.py",
     "scripts/check-easy-rust-style.py",
   ];
   for (const file of files) {
@@ -204,6 +206,7 @@ test("recipe hashes invalidate CSS, dependency, converter, and per-book setting 
   );
   assert.equal(recipeHash(dir, book), before);
   for (const file of [
+    "src/shared/ebook-sections.ts",
     "src/ebook-format.css",
     "bun.lock",
     "scripts/ebook-toolchain.json",
