@@ -4,8 +4,9 @@ on:
     push:
         branches: [main]
     schedule:
-        # Daily at 09:00 GMT+5 (04:00 UTC).
-        - cron: "0 4 * * *"
+        # Daily around 09:00 GMT+5: 09:07 local (04:07 UTC).
+        # Avoid the top-of-hour scheduler load; GitHub may still delay runs.
+        - cron: "7 4 * * *"
     workflow_dispatch:
         inputs:
             force_rebuild:
