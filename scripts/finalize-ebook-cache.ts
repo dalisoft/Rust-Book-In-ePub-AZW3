@@ -25,6 +25,11 @@ if (
 )
   throw new Error("Build plan does not cover exactly the configured books");
 const files: string[] = [];
+const tag =
+  process.env.BOOK_RELEASE_TAG ??
+  `release-${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Samarkand" }).format(new Date())}`;
+if (!/^release-\d{4}-\d{2}-\d{2}$/.test(tag))
+  throw new Error("Invalid daily release tag");
 for (const key of keys) {
   const source = plan.snapshot.sources[key];
   const folder = path.join(options.get("output-dir")!, key);
@@ -46,14 +51,24 @@ for (const key of keys) {
       epub: artifactHash(path.join(folder, `${key}.epub`)),
       azw3: artifactHash(path.join(folder, `${key}.azw3`)),
     };
+    source.artifactRelease = tag;
   }
   for (const format of ["epub", "azw3"] as const) {
+    if (!source.artifacts || !source.artifactRelease)
+      throw new Error(`Missing verified artifact location: ${key}`);
+    // Unchanged formats stay in the verified earlier release; no local copy
+    // or re-upload is needed. Only generated files enter the upload list.
+    if (!plan.buildKeys.includes(key)) continue;
     const file = path.join(folder, `${key}.${format}`);
     if (!source.artifacts || !validArtifact(file, source.artifacts[format]))
       throw new Error(`Missing or changed verified artifact: ${key}.${format}`);
     files.push(file);
   }
 }
+// Include earlier updates on the same day when verifying an existing tag.
+plan.snapshot.publishedKeys = keys.filter(
+  (key) => plan.snapshot.sources[key].artifactRelease === tag,
+);
 for (const [option, text] of [
   ["output", `${JSON.stringify(plan.snapshot, null, 2)}\n`],
   ["files", `${files.join("\n")}\n`],

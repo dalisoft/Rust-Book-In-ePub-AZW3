@@ -4,9 +4,9 @@ on:
     push:
         branches: [main]
     schedule:
-        # Daily around 09:00 GMT+5: 09:07 local (04:07 UTC).
-        # Avoid the top-of-hour scheduler load; GitHub may still delay runs.
-        - cron: "7 4 * * *"
+        # Daily 09:00 GMT+5 (04:00 UTC). Native scheduling is best-effort;
+        # an external scheduler can use workflow_dispatch at the same time.
+        - cron: "0 4 * * *"
     workflow_dispatch:
         inputs:
             force_rebuild:
@@ -102,6 +102,7 @@ jobs:
                   CI: true
                   BOOK_BUILD_WORKERS: 4
                   BOOK_BUILD_PLAN: .cache/source-check/build-plan.json
+                  BOOK_RELEASE_TAG: release-${{ steps.date.outputs.date }}
               run: sh scripts/ci-ebooks.sh all
             - name: Publish EPUB and AZW3 release
               if: steps.sources.outputs.changed == 'true'
@@ -119,7 +120,7 @@ jobs:
                       gh release create "$tag" "${files[@]}" \
                         --target "$GITHUB_SHA" \
                         --title "EPUB and AZW3 ${{ steps.date.outputs.date }}" \
-                        --notes "Generated from the books' official print pages. EPUB styling and internal links validated. External links require internet; unavailable Rust RFC source diagrams appear as labeled links." || true
+                        --notes "Only changed books are uploaded. source-fingerprints.json indexes every current book and its artifactRelease tag. EPUB styling and internal links validated. External links require internet; unavailable Rust RFC source diagrams appear as labeled links." || true
                     fi
                     if gh api "repos/$GH_REPO/releases/tags/$tag" > .cache/source-check/published-release.json &&
                        node scripts/verify-release-cache.ts .cache/source-check/source-fingerprints.json .cache/source-check/published-release.json; then
@@ -129,3 +130,8 @@ jobs:
                   done
                   echo "Release upload did not pass complete asset hash verification" >&2
                   exit 1
+            - name: No source changes — finish successfully
+              if: steps.sources.outputs.changed != 'true'
+              run: |
+                  echo "No source, image, styling or recipe changes. Skipping conversion and release."
+                  exit 0

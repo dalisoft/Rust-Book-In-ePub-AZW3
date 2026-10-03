@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
+import { getProjectRoot, loadConfig } from "../src/shared/config.ts";
 import { test } from "node:test";
 import pLimit from "p-limit";
 import {
@@ -71,7 +73,7 @@ test("unchanged complete release skips all builds and artifact downloads", async
   assert.deepEqual(plan.reusedKeys, ["One", "Two"]);
 });
 
-test("one changed book restores unchanged formats with identical hashes", async (t) => {
+test("one changed book does not download unchanged release formats", async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ebook-cache-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const current = snapshot();
@@ -92,8 +94,8 @@ test("one changed book restores unchanged formats with identical hashes", async 
   );
   assert.deepEqual(plan.buildKeys, ["One"]);
   assert.deepEqual(plan.reusedKeys, ["Two"]);
-  assert.deepEqual(restored, ["Two"]);
-  assert.deepEqual(artifactHash(path.join(dir, "Two", "Two.epub")), artifact);
+  assert.deepEqual(restored, []);
+  assert.equal(plan.snapshot.sources.Two.artifactRelease, "release-test");
 });
 
 test("corrupt downloaded cache rebuilds the affected book instead of reusing it", async (t) => {
@@ -101,12 +103,14 @@ test("corrupt downloaded cache rebuilds the affected book instead of reusing it"
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const current = snapshot();
   current.sources.One.recipe = sha256("new CSS");
+  const remote = release();
+  for (const asset of remote.assets) delete asset.digest;
   const plan = await prepareBuildPlan(
     current,
     snapshot(),
     dir,
     dir,
-    release(),
+    remote,
     async (key, folder) => {
       fs.mkdirSync(folder, { recursive: true });
       for (const format of ["epub", "azw3"])
@@ -232,6 +236,134 @@ test("published assets must match the complete manifest by hash and size", () =>
   assert.throws(
     () => verifyRelease(snapshot(), remote, artifact),
     /hash\/size mismatch/,
+  );
+});
+
+test("delta releases keep earlier unchanged artifact locations without downloads", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ebook-cache-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const baseline = snapshot();
+  baseline.sources.One.artifactRelease = "release-new";
+  baseline.sources.Two.artifactRelease = "release-old";
+  const remote = release(["One"]);
+  remote.tag_name = "release-new";
+  remote.related = {
+    "release-old": { ...release(["Two"]), tag_name: "release-old" },
+  };
+  const current = snapshot();
+  const plan = await prepareBuildPlan(
+    current,
+    baseline,
+    dir,
+    dir,
+    remote,
+    async () => assert.fail("No unchanged ebook download"),
+  );
+  assert.deepEqual(plan.buildKeys, []);
+  assert.deepEqual(plan.reusedKeys, ["One", "Two"]);
+  assert.equal(current.sources.Two.artifactRelease, "release-old");
+  delete remote.related["release-old"];
+  const missing = await prepareBuildPlan(
+    snapshot(),
+    baseline,
+    dir,
+    dir,
+    remote,
+    async () => assert.fail("Missing release must rebuild"),
+  );
+  assert.deepEqual(missing.buildKeys, ["Two"]);
+});
+
+test("delta publishing verifies only this release's books plus the full index", () => {
+  const index = snapshot();
+  index.publishedKeys = ["One"];
+  index.sources.One.artifactRelease = "release-test";
+  index.sources.Two.artifactRelease = "release-earlier";
+  const remote = release(["One"]);
+  remote.assets.push({
+    name: "source-fingerprints.json",
+    size: artifact.size,
+    digest: `sha256:${artifact.sha256}`,
+  });
+  assert.doesNotThrow(() => verifyRelease(index, remote, artifact));
+  index.sources.One.artifactRelease = "release-wrong";
+  assert.throws(
+    () => verifyRelease(index, remote, artifact),
+    /another release/,
+  );
+});
+
+test("finalizer uploads only a changed pair while indexing all unchanged books", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ebook-delta-finalize-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const root = getProjectRoot(import.meta.url);
+  const keys = Object.keys(loadConfig(import.meta.url).Books).sort();
+  const changed = keys[0];
+  const index = snapshot(keys);
+  for (const value of Object.values(index.sources))
+    value.artifactRelease = "release-2026-10-01";
+  // Another book was already updated earlier today: verify it but don't upload it again.
+  index.sources[keys[1]].artifactRelease = "release-2026-10-03";
+  const folder = path.join(dir, changed);
+  fs.mkdirSync(folder);
+  for (const ext of ["epub", "azw3"])
+    fs.writeFileSync(path.join(folder, `${changed}.${ext}`), bytes);
+  fs.writeFileSync(
+    path.join(folder, "manifest.json"),
+    JSON.stringify({
+      sourceSha256: index.sources[changed].sha256,
+      sourceImages: {},
+      sourceStyles: {
+        "https://example.test/style.css": {
+          resolvedUrl: "https://example.test/style.css",
+          sha256: sha256("css"),
+          contentType: "text/css",
+        },
+      },
+    }),
+  );
+  const plan = {
+    version: 1,
+    sourceDir: dir,
+    buildKeys: [changed],
+    reusedKeys: keys.slice(1),
+    removedKeys: [],
+    snapshot: index,
+  };
+  fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify(plan));
+  execFileSync(
+    process.execPath,
+    [
+      path.join(root, "scripts/finalize-ebook-cache.ts"),
+      `--plan=${dir}/plan.json`,
+      `--output-dir=${dir}`,
+      `--output=${dir}/index.json`,
+      `--files=${dir}/files.txt`,
+    ],
+    { env: { ...process.env, BOOK_RELEASE_TAG: "release-2026-10-03" } },
+  );
+  const published = readSnapshot(path.join(dir, "index.json"));
+  assert.ok(published);
+  assert.deepEqual(published.publishedKeys, keys.slice(0, 2));
+  assert.equal(Object.keys(published.sources).length, keys.length);
+  assert.equal(
+    published.sources[changed].artifactRelease,
+    "release-2026-10-03",
+  );
+  assert.equal(
+    published.sources[keys[2]].artifactRelease,
+    "release-2026-10-01",
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(dir, "files.txt"), "utf8").trim().split("\n"),
+    [
+      path.join(folder, `${changed}.epub`),
+      path.join(folder, `${changed}.azw3`),
+    ],
+  );
+  assert.deepEqual(
+    artifactHash(path.join(folder, `${changed}.epub`)),
+    artifact,
   );
 });
 

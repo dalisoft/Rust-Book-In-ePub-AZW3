@@ -18,8 +18,13 @@ export type Source = {
   images: Record<string, ImageSource>;
   styles?: Record<string, ImageSource>;
   artifacts?: { epub: Artifact; azw3: Artifact };
+  artifactRelease?: string;
 };
-export type Snapshot = { version: 2; sources: Record<string, Source> };
+export type Snapshot = {
+  version: 2;
+  sources: Record<string, Source>;
+  publishedKeys?: string[];
+};
 export type BuildPlan = {
   version: 1;
   sourceDir: string;
@@ -31,6 +36,7 @@ export type BuildPlan = {
 export type Release = {
   tag_name: string;
   assets: Array<{ name: string; size: number; digest?: string | null }>;
+  related?: Record<string, Release>;
 };
 
 export function verifyRelease(
@@ -42,6 +48,10 @@ export function verifyRelease(
     "source-fingerprints.json": manifest,
   };
   for (const [key, source] of Object.entries(snapshot.sources)) {
+    if (snapshot.publishedKeys && !snapshot.publishedKeys.includes(key))
+      continue;
+    if (snapshot.publishedKeys && source.artifactRelease !== release.tag_name)
+      throw new Error(`Published artifact points to another release: ${key}`);
     if (!source.artifacts?.epub || !source.artifacts?.azw3)
       throw new Error(`Missing artifact fingerprints: ${key}`);
     for (const format of ["epub", "azw3"] as const)
@@ -49,7 +59,7 @@ export function verifyRelease(
   }
   if (release.assets.length !== Object.keys(expected).length)
     throw new Error(
-      "Release asset count does not match the complete book cache",
+      "Release asset count does not match the published book manifest",
     );
   for (const [name, artifact] of Object.entries(expected)) {
     const assets = release.assets.filter((asset) => asset.name === name);
@@ -80,22 +90,25 @@ export async function prepareBuildPlan(
     ),
     snapshot,
   };
-  const reusable: string[] = [];
-  let verifiedWithoutDownload = true;
   for (const [key, source] of Object.entries(snapshot.sources)) {
     const previous = baseline?.sources[key];
     const artifacts = previous?.artifacts;
     let usable =
       sameSource(previous, source) && !!artifacts?.epub && !!artifacts?.azw3;
+    let verifiedWithoutDownload = true;
     if (usable && artifacts) {
+      const tag = previous?.artifactRelease ?? release?.tag_name;
+      const remote =
+        tag === release?.tag_name ? release : release?.related?.[tag ?? ""];
       for (const format of ["epub", "azw3"] as const) {
         const local = path.join(outputDir, key, `${key}.${format}`);
-        const asset = release?.assets.find(
+        const asset = remote?.assets.find(
           (item) => item.name === `${key}.${format}`,
         );
         if (
           release &&
-          (!asset ||
+          (!remote ||
+            !asset ||
             asset.size !== artifacts[format].size ||
             (asset.digest &&
               asset.digest !== `sha256:${artifacts[format].sha256}`))
@@ -105,25 +118,7 @@ export async function prepareBuildPlan(
         if (!release) usable = false;
         if (!asset?.digest) verifiedWithoutDownload = false;
       }
-    }
-    if (usable) reusable.push(key);
-    else plan.buildKeys.push(key);
-  }
-  if (
-    !plan.buildKeys.length &&
-    !plan.removedKeys.length &&
-    verifiedWithoutDownload
-  ) {
-    for (const key of reusable)
-      snapshot.sources[key].artifacts = baseline!.sources[key].artifacts;
-    plan.reusedKeys = reusable;
-    return plan;
-  }
-  const limit = pLimit(4);
-  await Promise.all(
-    reusable.map((key) =>
-      limit(async () => {
-        const artifacts = baseline!.sources[key].artifacts!;
+      if (usable && !verifiedWithoutDownload) {
         const folder = path.join(outputDir, key);
         const complete = () =>
           (["epub", "azw3"] as const).every((format) =>
@@ -135,15 +130,19 @@ export async function prepareBuildPlan(
         try {
           if (!complete()) await restore(key, folder);
           if (!complete()) throw new Error("Artifact SHA-256/size mismatch");
-          snapshot.sources[key].artifacts = artifacts;
-          plan.reusedKeys.push(key);
         } catch (error) {
           console.warn(`${key}: cache unavailable; rebuilding: ${error}`);
-          plan.buildKeys.push(key);
+          usable = false;
         }
-      }),
-    ),
-  );
+      }
+      if (usable) {
+        source.artifacts = artifacts;
+        source.artifactRelease = tag;
+      }
+    }
+    if (usable) plan.reusedKeys.push(key);
+    else plan.buildKeys.push(key);
+  }
   plan.buildKeys.sort();
   plan.reusedKeys.sort();
   return plan;
@@ -315,6 +314,11 @@ export function readSnapshot(file: string): Snapshot | undefined {
         !/^[a-f0-9]{64}$/.test(source.recipe)
       )
         throw new Error(`Invalid cached source: ${key}`);
+      if (
+        source.artifactRelease &&
+        !/^[A-Za-z0-9._-]+$/.test(source.artifactRelease)
+      )
+        throw new Error(`Invalid artifact release: ${key}`);
       for (const image of [
         ...Object.values(source.images),
         ...Object.values(source.styles ?? {}),
@@ -336,6 +340,12 @@ export function readSnapshot(file: string): Snapshot | undefined {
           throw new Error(`Invalid cached artifact: ${key}`);
       }
     }
+    if (
+      snapshot.publishedKeys &&
+      (new Set(snapshot.publishedKeys).size !== snapshot.publishedKeys.length ||
+        snapshot.publishedKeys.some((key) => !snapshot.sources[key]))
+    )
+      throw new Error("Invalid published book list");
     return snapshot;
   } catch (error) {
     console.warn(`Ignoring invalid fingerprint cache; rebuilding: ${error}`);

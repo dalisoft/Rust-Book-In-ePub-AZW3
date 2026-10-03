@@ -35,6 +35,37 @@ const baseline = options.has("baseline")
 const release = options.has("release")
   ? (JSON.parse(fs.readFileSync(options.get("release")!, "utf8")) as Release)
   : undefined;
+// Delta releases keep unchanged books in their original releases. Resolve
+// those asset digests without downloading or republishing the ebook files.
+if (release && baseline) {
+  const tags = [
+    ...new Set(
+      Object.values(baseline.sources).map(
+        (source) => source.artifactRelease ?? release.tag_name,
+      ),
+    ),
+  ].filter((tag) => tag !== release.tag_name);
+  release.related = {};
+  const lookup = pLimit(4);
+  await Promise.all(
+    tags.map((tag) =>
+      lookup(async () => {
+        try {
+          const result = await run(
+            "gh",
+            ["api", `repos/${process.env.GH_REPO}/releases/tags/${tag}`],
+            { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 },
+          );
+          release.related![tag] = JSON.parse(result.stdout) as Release;
+        } catch (error) {
+          console.warn(
+            `Referenced release unavailable; affected books will rebuild: ${tag}: ${error}`,
+          );
+        }
+      }),
+    ),
+  );
+}
 const sourceDir = options.get("source-dir")!;
 const limit = pLimit(4);
 const imageLimit = pLimit(8);
@@ -75,7 +106,7 @@ const plan = await prepareBuildPlan(
         [
           "release",
           "download",
-          release.tag_name,
+          baseline!.sources[key].artifactRelease ?? release.tag_name,
           "--pattern",
           `${key}.epub`,
           "--pattern",

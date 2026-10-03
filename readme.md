@@ -38,11 +38,14 @@ For a single book, run `bun run ebooks --book=RustPerformanceBook`; repeat
 `--book=KEY` for several books, or use `--all`. On a machine with an existing
 Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
 `Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
-02:17 UTC, or manually. Each release includes a fingerprint manifest for the
+04:00 UTC (09:00 GMT+5), or manually. GitHub's native cron is best-effort and
+can be delayed; an external scheduler can dispatch this same workflow at 09:00.
+Each release includes a fingerprint manifest for the
 official print pages. Every run hashes each page and its referenced image bytes,
 then compares them with the latest release's `source-fingerprints.json` cache.
-Only changed books rebuild. Unchanged EPUB/AZW3 assets are restored from that
-release and verified by SHA-256 and size. An entirely unchanged run exits
+Only changed books rebuild and upload. Unchanged EPUB/AZW3 assets stay in their
+original releases, verified against GitHub's SHA-256 and size metadata without
+downloading the ebooks. An entirely unchanged run exits
 successfully before installing a browser or converter, with no new release.
 The cache also hashes each book's settings, styling, conversion and validation
 code, dependency lockfile, Node major version, and pinned converter version;
@@ -50,7 +53,15 @@ changes to those inputs invalidate the affected books. Older releases seed the
 cache with one full rebuild. Missing or corrupt cached formats rebuild safely.
 New formats pass link, styling, archive, and metadata checks; reused formats
 retain their matching validation recipe and are checked again by SHA-256.
-Every published release still contains both formats for every configured book;
+Daily releases contain only updated books in both formats, plus the complete
+`source-fingerprints.json` index. Each indexed book has an `artifactRelease`
+tag locating its latest EPUB/AZW3 pair; `publishedKeys` lists this day's books.
+For a complete collection, follow those tags rather than downloading only the
+newest release's ebook assets. Retain referenced older releases: deleting one
+invalidates that book's cache and causes a safe rebuild. Repeated updates on
+the same day use one `release-YYYY-MM-DD` tag and retain earlier updates that
+day. Legacy full-collection releases remain supported without a forced rebuild.
+The
 its browser, package store, and converter stay inside the checked-out project.
 On CI, four process workers build independent books in separate output folders
 and converter config directories. The large Rust RFCs book starts first, and
