@@ -40,6 +40,8 @@ Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
 `Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
 04:00 UTC (09:00 GMT+5), or manually. GitHub's native cron is best-effort and
 can be delayed; an external scheduler can dispatch this same workflow at 09:00.
+Delayed native cron runs skip the build when a successful or active external
+dispatch already exists for that local day and commit.
 Each release includes a fingerprint manifest for the
 official print pages. Every run hashes each page and its referenced image bytes,
 then compares them with the latest release's `source-fingerprints.json` cache.
@@ -61,8 +63,7 @@ newest release's ebook assets. Retain referenced older releases: deleting one
 invalidates that book's cache and causes a safe rebuild. Repeated updates on
 the same day use one `release-YYYY-MM-DD` tag and retain earlier updates that
 day. Legacy full-collection releases remain supported without a forced rebuild.
-The
-its browser, package store, and converter stay inside the checked-out project.
+The browser, package store, and converter stay inside the checked-out project.
 On CI, four process workers build independent books in separate output folders
 and converter config directories. The large Rust RFCs book starts first, and
 all four workers share the remaining books. Large print pages are pre-sectioned
