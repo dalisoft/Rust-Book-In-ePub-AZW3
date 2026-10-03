@@ -4,9 +4,10 @@ on:
     push:
         branches: [main]
     schedule:
-        # Daily 09:00 GMT+5 (04:00 UTC). Native scheduling is best-effort;
-        # an external scheduler can use workflow_dispatch at the same time.
-        - cron: "0 4 * * *"
+        # Daily 09:00 GMT+5 (04:00 UTC), entirely on GitHub Actions.
+        # GitHub's native scheduler may delay runs; no external trigger is used.
+        - cron: "0 9 * * *"
+          timezone: "Asia/Samarkand"
     workflow_dispatch:
         inputs:
             force_rebuild:
@@ -15,7 +16,6 @@ on:
                 default: false
 
 permissions:
-    actions: read
     contents: write
 
 concurrency:
@@ -23,33 +23,7 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
-    schedule-gate:
-        runs-on: ubuntu-24.04
-        outputs:
-            run: ${{ steps.check.outputs.run }}
-        steps:
-            - name: Skip delayed cron after today's external trigger
-              id: check
-              env:
-                  GH_TOKEN: ${{ github.token }}
-                  GH_REPO: ${{ github.repository }}
-              run: |
-                  run=true
-                  if [ "$GITHUB_EVENT_NAME" = schedule ]; then
-                    day=$(TZ=Asia/Samarkand date +'%Y-%m-%d')
-                    # 08:50 GMT+5 allows the external 09:00 trigger some clock slack.
-                    cutoff="${day}T03:50:00Z"
-                    if gh api "repos/$GH_REPO/actions/workflows/nodejs.yml/runs?event=workflow_dispatch&branch=main&per_page=30" |
-                       jq -e --arg cutoff "$cutoff" --arg sha "$GITHUB_SHA" \
-                         '.workflow_runs | any(.head_sha == $sha and .created_at >= $cutoff and (.status == "queued" or .status == "in_progress" or .conclusion == "success"))' >/dev/null; then
-                      run=false
-                      echo "Today's external trigger already ran; skipping delayed native cron."
-                    fi
-                  fi
-                  echo "run=$run" >> "$GITHUB_OUTPUT"
     build:
-        needs: schedule-gate
-        if: needs.schedule-gate.outputs.run == 'true'
         runs-on: ubuntu-24.04
         env:
             PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/playwright

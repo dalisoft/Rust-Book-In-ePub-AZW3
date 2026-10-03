@@ -39,9 +39,9 @@ For a single book, run `bun run ebooks --book=RustPerformanceBook`; repeat
 Chromium installation, pass `--chromium=/absolute/path/to/chromium`. The
 `Publish EPUB and AZW3 When Sources Change` runs on pushes to `main`, daily at
 04:00 UTC (09:00 GMT+5), or manually. GitHub's native cron is best-effort and
-can be delayed; an external scheduler can dispatch this same workflow at 09:00.
-Delayed native cron runs skip the build when a successful or active external
-dispatch already exists for that local day and commit.
+can be delayed; no Codex schedule or external trigger controls this CI.
+The separate local book-update automation downloads releases into the source
+folders and updates Calibre; it does not trigger or publish GitHub releases.
 Each release includes a fingerprint manifest for the
 official print pages. Every run hashes each page and its referenced image bytes,
 then compares them with the latest release's `source-fingerprints.json` cache.
