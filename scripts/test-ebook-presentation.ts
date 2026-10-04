@@ -23,17 +23,29 @@ try {
     p {line-height:1.4;text-indent:2em}
     pre {white-space:pre;background:var(--absent,var(--paper,rgb(1,2,3)))}
     h1 {font-size:2em}
+    .page {margin-block-start:-50px}
+    h1:target::before {content:'»';width:30px;display:inline-block}
+    h2:target::after {content:'»';padding-right:5px;display:inline-block}
+    .rule:target .rule-link::before {content:'»';display:inline-block}
     @media print {h2 {break-before:page}}
     @media screen {h2 {color:red}}
-  </style></head><body><style>h1 {font-size:3em}</style><div class="author-content"><main>
+  </style></head><body><style>h1 {font-size:3em}</style><div class="author-content"><div id="mdbook-page-wrapper"><div class="page"><main>
     <h1>Title</h1><p>Author paragraph.</p><h2>Chapter</h2>
     <pre><code>fn main() {\n    let value = 42;\n}</code></pre>
     <svg xmlns="http://www.w3.org/2000/svg"><style>.diagram {stroke:black}</style><path class="diagram" d="M0,0 L10,10"/></svg>
-  </main></div></body></html>`);
+  </main></div></div></div></body></html>`);
   const presentation = await capturePresentation(page, stage, async (url) => {
     throw new Error(`Unexpected remote request: ${url}`);
   });
   assert.ok(!presentation.css.includes("var("));
+  assert.ok(!presentation.css.includes(":target::before"));
+  assert.ok(!presentation.css.includes(":target::after"));
+  assert.ok(!presentation.css.includes(".rule:target .rule-link::before"));
+  assert.ok(!presentation.css.includes("-50px"));
+  assert.equal(
+    await page.locator(".page").evaluate((e) => getComputedStyle(e).marginTop),
+    "0px",
+  );
   assert.equal(
     await page.locator("path").getAttribute("stroke"),
     "rgb(0, 0, 0)",

@@ -52,6 +52,11 @@ function resolvePresentationCss(css: string): string {
         if (rule instanceof CSSSupportsRule)
           return CSS.supports(rule.conditionText) ? rules(rule.cssRules) : "";
         if (rule instanceof CSSStyleRule) {
+          // mdBook's heading permalink arrow is browser UI. Calibre can
+          // flatten :target::before/after into :target and apply its sizing to
+          // the heading itself, so do not carry that decoration into ebooks.
+          if (/:target[^,{]*::?(?:before|after)/.test(rule.selectorText))
+            return "";
           let element: Element | null = null;
           try {
             element = document.querySelector(rule.selectorText);
@@ -62,6 +67,17 @@ function resolvePresentationCss(css: string): string {
           // empty longhands through CSSOM (e.g. background:var(--paper)).
           const style = document.createElement("div").style;
           style.cssText = resolve(rule.style.cssText, element ?? main);
+          // Older mdBook themes use #page-wrapper instead of the new wrapper
+          // ID. Remove the exact web-header offset from the rule itself too.
+          if (
+            /\.page\b/.test(rule.selectorText) &&
+            /^(?:calc\(-50px\)|-50px)$/.test(
+              style.getPropertyValue("margin-block-start"),
+            )
+          ) {
+            style.setProperty("margin-block-start", "0");
+            style.setProperty("margin-top", "0");
+          }
           const declarations = Array.from(style)
             .filter((name) => !name.startsWith("--"))
             .map(
@@ -165,6 +181,14 @@ export async function capturePresentation(
     )
   ).join("\n");
   if (!css.trim()) throw new Error("Source has no authored stylesheets");
+  // mdBook offsets its page by the web menu's height. The menu is absent in
+  // ebooks; retaining that negative offset clips the first heading.
+  const hasMdBookPage = await page.evaluate(() =>
+    Boolean(document.querySelector("#mdbook-page-wrapper .page")),
+  );
+  if (hasMdBookPage)
+    css +=
+      "\n#mdbook-page-wrapper .page{margin-top:0!important;margin-block-start:0!important;}";
   // Restrict faces to a single supported source, preferring native TTF/OTF.
   // Browser/Kindle font installation is never used.
   const faces = await page.evaluate((value) => {

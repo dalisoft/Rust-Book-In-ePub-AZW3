@@ -32,6 +32,10 @@ def check(epub: Path) -> None:
         if not css_files:
             raise SystemExit(f"{epub}: no packaged CSS")
         css = "\n".join(archive.read(name).decode("utf-8") for name in css_files)
+        if re.search(r"margin-block-start:\s*calc\(-50px\)", css):
+            raise SystemExit(f"{epub}: browser-header offset can clip headings")
+        if re.search(r":target[^{}]*\{[^}]*content:\s*[\"']»", css):
+            raise SystemExit(f"{epub}: browser permalink decoration can alter heading layout")
         for css_name in css_files:
             sheet = archive.read(css_name).decode("utf-8")
             for ref in re.findall(r"url\(\s*['\"]?([^'\"\s)]+)", sheet):
