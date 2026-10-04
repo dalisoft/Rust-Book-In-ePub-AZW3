@@ -4,10 +4,9 @@ on:
     push:
         branches: [main]
     schedule:
-        # Daily 09:00 GMT+5 (04:00 UTC), entirely on GitHub Actions.
+        # Daily 05:00 GMT+5 (00:00 UTC), using GitHub's default UTC timezone.
         # GitHub's native scheduler may delay runs; no external trigger is used.
-        - cron: "0 9 * * *"
-          timezone: "Asia/Samarkand"
+        - cron: "0 0 * * *"
     workflow_dispatch:
         inputs:
             force_rebuild:
