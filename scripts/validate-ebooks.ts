@@ -58,17 +58,31 @@ await Promise.all(
               ],
             ] as Array<[string, string[]]>)
           : []),
-        ["ebook-meta", [epub]],
-        ["ebook-meta", [azw3]],
+        ...[epub, azw3].map((file): [string, string[]] => [
+          "ebook-meta",
+          [
+            file,
+            "--disallow-rendered-cover",
+            "--get-cover",
+            path.join(configDir, `${path.extname(file).slice(1)}-cover.jpg`),
+          ],
+        ]),
       ];
       for (const [command, args] of commands) {
         try {
+          if (command === "ebook-meta") fs.rmSync(args.at(-1)!, { force: true });
           const result = await run(command, args, {
             timeout: 120_000,
             maxBuffer: 4 * 1024 * 1024,
             env: { ...process.env, CALIBRE_CONFIG_DIRECTORY: configDir },
           });
           if (command === "python3") console.log(result.stdout.trim());
+          if (command === "ebook-meta") {
+            const cover = args.at(-1)!;
+            if (!fs.existsSync(cover) || fs.statSync(cover).size === 0)
+              throw new Error(`Missing embedded cover: ${args[0]}`);
+            fs.unlinkSync(cover);
+          }
         } catch (error) {
           throw new Error(`${key}: ${command} validation failed: ${error}`);
         }

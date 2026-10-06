@@ -616,7 +616,6 @@ async function main(): Promise<void> {
             "--chapter-mark",
             "none",
             "--dont-split-on-page-breaks",
-            "--no-default-epub-cover",
             "--disable-font-rescaling",
             "--disable-remove-fake-margins",
             "--minimum-line-height",
