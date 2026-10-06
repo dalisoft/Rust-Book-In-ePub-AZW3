@@ -15,6 +15,7 @@ git clone https://github.com/dalisoft/Rust-Book-In-ePub-AZW3.git
 cd Rust-Book-In-ePub-AZW3
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/playwright"
 bun ci --ignore-scripts
+bun run prepare
 ./node_modules/.bin/playwright install chromium
 bun run start
 ```
