@@ -138,7 +138,11 @@ function calibreMetadata(
   const cover = path.join(folder, "cover.jpg");
   if (!fs.existsSync(opf) || !fs.existsSync(cover))
     throw new Error(`Missing Calibre metadata/cover for ${key}`);
-  return { opf, cover, title: rows[0].title };
+  const title =
+    key === "ComprehensiveRust"
+      ? rows[0].title.replaceAll("🦀", "").trim()
+      : rows[0].title;
+  return { opf, cover, title };
 }
 
 async function main(): Promise<void> {
@@ -605,7 +609,14 @@ async function main(): Promise<void> {
         );
         const sourceCover = coverImage && downloadedImages.get(coverImage.url);
         const metaArgs = metadata
-          ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
+          ? [
+              "--from-opf",
+              metadata.opf,
+              "--title",
+              metadata.title,
+              "--cover",
+              metadata.cover,
+            ]
           : [
               "--title",
               title,
@@ -653,7 +664,14 @@ async function main(): Promise<void> {
           azw3,
           [
             ...(metadata
-              ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
+              ? [
+                  "--from-opf",
+                  metadata.opf,
+                  "--title",
+                  metadata.title,
+                  "--cover",
+                  metadata.cover,
+                ]
               : []),
             "--disable-font-rescaling",
             "--disable-remove-fake-margins",
