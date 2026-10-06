@@ -70,7 +70,8 @@ await Promise.all(
       ];
       for (const [command, args] of commands) {
         try {
-          if (command === "ebook-meta") fs.rmSync(args.at(-1)!, { force: true });
+          if (command === "ebook-meta")
+            fs.rmSync(args.at(-1)!, { force: true });
           const result = await run(command, args, {
             timeout: 120_000,
             maxBuffer: 4 * 1024 * 1024,
