@@ -13,7 +13,7 @@
       },
       "devDependencies": {
         "@types/node": "^26.6.3",
-        "knip": "^6.38.0",
+        "knip": "^6.39.0",
         "oxfmt": "^0.71.0",
         "oxlint": "^1.86.0",
         "simple-git-hooks": "^2.14.0",
@@ -256,7 +256,7 @@
 
     "joycon": ["joycon@3.1.1", "", {}, "sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw=="],
 
-    "knip": ["knip@6.38.0", "", { "dependencies": { "fdir": "6.5.0", "formatly": "0.7.1", "get-tsconfig": "4.14.3", "jiti": "2.7.0", "oxc-parser": "0.150.0", "oxc-resolver": "11.24.2", "picomatch": "4.0.7", "smol-toml": "1.9.0", "strip-json-comments": "5.0.3", "tinyglobby": "0.2.17", "unbash": "4.0.11", "yaml": "2.9.1", "zod": "4.6.5" }, "bin": { "knip": "bin/knip.js", "knip-bun": "bin/knip-bun.js" } }, "sha512-umytiMCaZf02MV9SOO1FEDgbDf6h20VZk3ruJE0kh52kkGjYZFRUAXHJWYoLhvhoHGINO/7GXVJmQ2vxTBvl6A=="],
+    "knip": ["knip@6.39.0", "", { "dependencies": { "fdir": "^6.5.0", "formatly": "^0.7.0", "get-tsconfig": "4.14.3", "jiti": "^2.7.0", "oxc-parser": "^0.150.0", "oxc-resolver": "11.24.2", "picomatch": "^4.0.7", "smol-toml": "^1.8.0", "strip-json-comments": "5.0.3", "tinyglobby": "^0.2.17", "unbash": "^4.0.11", "yaml": "^2.9.1", "zod": "^4.4.3" }, "bin": { "knip": "bin/knip.js", "knip-bun": "bin/knip-bun.js" } }, "sha512-Y7g6Ve1ATMox1u1v+gx3z9LTlvzVLTJISm/LVn9TgBU4qc7OoC63AWGO8qCFPVDDdaqlYdXkDDvvO1METBfTRw=="],
 
     "minimist": ["minimist@1.2.8", "", {}, "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="],
 
