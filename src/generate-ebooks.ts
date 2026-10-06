@@ -597,9 +597,24 @@ async function main(): Promise<void> {
         const metadata = calibreMetadata(key, args, map);
         const epub = path.join(folder, `${key}.epub`);
         const azw3 = path.join(folder, `${key}.azw3`);
+        const coverImage = extracted.images.find(
+          ({ alt, url }) =>
+            downloadedImages.has(url) &&
+            (/\b(?:book|front)\s+cover\b|^\s*cover\s*$/i.test(alt) ||
+              /(?:^|[/_.-])cover(?:[_.-]|$)/i.test(new URL(url).pathname)),
+        );
+        const sourceCover = coverImage && downloadedImages.get(coverImage.url);
         const metaArgs = metadata
           ? ["--from-opf", metadata.opf, "--cover", metadata.cover]
-          : ["--title", title, "--language", "en"];
+          : [
+              "--title",
+              title,
+              "--language",
+              "en",
+              ...(sourceCover
+                ? ["--cover", path.join(stage, sourceCover)]
+                : []),
+            ];
         const chapterXPath =
           extracted.chapters < 5 && extracted.sections >= 5
             ? '//*[name()="h2"]'
