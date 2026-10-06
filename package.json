@@ -28,7 +28,7 @@
         "toml": "^5.0.0"
     },
     "devDependencies": {
-        "@types/node": "^26.6.3",
+        "@types/node": "^26.6.4",
         "knip": "^6.38.0",
         "oxfmt": "^0.71.0",
         "oxlint": "^1.86.0",
