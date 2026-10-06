@@ -58,15 +58,20 @@ await Promise.all(
               ],
             ] as Array<[string, string[]]>)
           : []),
-        ...[epub, azw3].map((file): [string, string[]] => [
-          "ebook-meta",
-          [
-            file,
-            "--disallow-rendered-cover",
-            "--get-cover",
-            path.join(configDir, `${path.extname(file).slice(1)}-cover.jpg`),
-          ],
-        ]),
+        ...[epub, azw3].map((file): [string, string[]] => {
+          const inspection = path.join(configDir, path.basename(file));
+          // This Calibre inspection flag also triggers a metadata rewrite.
+          fs.copyFileSync(file, inspection);
+          return [
+            "ebook-meta",
+            [
+              inspection,
+              "--disallow-rendered-cover",
+              "--get-cover",
+              path.join(configDir, `${path.extname(file).slice(1)}-cover.jpg`),
+            ],
+          ];
+        }),
       ];
       for (const [command, args] of commands) {
         try {
@@ -86,6 +91,11 @@ await Promise.all(
           }
         } catch (error) {
           throw new Error(`${key}: ${command} validation failed: ${error}`);
+        } finally {
+          if (command === "ebook-meta") {
+            fs.rmSync(args[0], { force: true });
+            fs.rmSync(args.at(-1)!, { force: true });
+          }
         }
       }
       console.log(`${key}: EPUB/AZW3 validated`);
