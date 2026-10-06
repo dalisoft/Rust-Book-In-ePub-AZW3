@@ -141,9 +141,9 @@ print_url="https://docs.rust-embedded.org/embedonomicon/print.html"
 file_name="embedonomicon.pdf"
 
 [Books.WasmBindgenGuide]
-print_url="https://rustwasm.github.io/docs/wasm-bindgen/print.html"
+print_url="https://wasm-bindgen.github.io/wasm-bindgen/print.html"
 file_name="wasm_bindgen_guide.pdf"
-ebook_image_fallback_prefix="https://rustwasm.github.io/docs/wasm-bindgen/"
+ebook_image_fallback_prefix="https://wasm-bindgen.github.io/wasm-bindgen/"
 ebook_image_fallback_base="https://raw.githubusercontent.com/wasm-bindgen/wasm-bindgen/main/guide/src/examples/"
 
 [Books.LifetimeKata]
