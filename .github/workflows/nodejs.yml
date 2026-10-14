@@ -33,7 +33,7 @@ jobs:
               id: date
               run: echo "date=$(TZ=Asia/Samarkand date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
             - uses: actions/checkout@v7.0.1
-            - uses: actions/setup-node@v7.0.0
+            - uses: actions/setup-node@v7.1.0
               with:
                   node-version: 26
                   package-manager-cache: false
